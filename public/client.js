@@ -9,7 +9,7 @@ document.getElementById('send').onclick = () => {
 };
 
 ws.onmessage = (event) => {
-  console.log('Received:', event.data);  // Log what comes from server
+  console.log('Received:', event.data); 
   const li = document.createElement('li');
   li.textContent = event.data;
   document.getElementById('chat').appendChild(li);
