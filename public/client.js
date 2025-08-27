@@ -1,23 +1,50 @@
 // public/client.js
+// Mobile viewport fix + chat client (uses JSON payloads, optimistic UI, duplicate prevention)
+
+// --- Mobile viewport fix (sets --vh and locks body scroll) ---
+(function () {
+  function setVh() {
+    document.documentElement.style.setProperty('--vh', window.innerHeight * 0.01 + 'px');
+  }
+  setVh();
+  window.addEventListener('resize', setVh, { passive: true });
+
+  // Prevent body/document scrolling; allow only chat container to scroll.
+  document.documentElement.style.overscrollBehavior = 'none';
+  document.body.style.overscrollBehavior = 'none';
+  document.body.style.overflow = 'hidden';
+})();
+
+// --- Chat client (executes after DOM elements are parsed; script is expected at end of body) ---
 (function () {
   // --- connection ---
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${protocol}://${window.location.host}`);
 
-  // --- DOM handles (works with original or updated HTML) ---
+  // --- DOM handles (works with index.html structure) ---
   const chat = document.getElementById('chat');         // <ul id="chat">
-  const input = document.getElementById('msg');         // <input id="msg"> or <textarea id="msg">
+  const input = document.getElementById('msg');         // <textarea id="msg">
   const button = document.getElementById('send');       // <button id="send">
-  const form = document.getElementById('composer');     // optional <form id="composer">
-  const container =
-    document.getElementById('chat-container') ||        // optional wrapper
-    (chat && chat.parentElement) || document.scrollingElement;
+  const form = document.getElementById('composer');     // <form id="composer">
+  const chatContainer = document.getElementById('chat-container') || (chat && chat.parentElement);
 
   // Guard: if no essential nodes, bail gracefully
-  if (!chat || !input) {
-    console.error('chat or msg element not found');
+  if (!chat || !input || !chatContainer) {
+    console.error('Required DOM nodes not found: #chat, #msg, #chat-container');
     return;
   }
+
+  // When the input gets focus, scroll chat to bottom after keyboard opens (mobile UX)
+  input.addEventListener('focus', () => {
+    setTimeout(() => {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }, 250);
+  });
+  input.addEventListener('blur', () => {
+    setTimeout(() => {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }, 250);
+  });
 
   // --- identity & pending map ---
   let CLIENT_ID = sessionStorage.getItem('annoClientId');
@@ -31,14 +58,13 @@
   function nowTs() { return Date.now(); }
 
   function atBottom() {
-    const c = container;
+    const c = chatContainer;
     const dist = c.scrollHeight - c.scrollTop - c.clientHeight;
     return dist < 120; // px from bottom
-    }
+  }
 
   function scrollToBottom() {
-    const c = container;
-    c.scrollTop = c.scrollHeight;
+    chatContainer.scrollTop = chatContainer.scrollHeight;
   }
 
   function autosize(el) {
@@ -50,7 +76,6 @@
     el.style.height = Math.min(el.scrollHeight, max) + 'px';
   }
 
-  // fallback disable manual resize even if CSS missing
   if (input && input.tagName === 'TEXTAREA') {
     input.style.resize = 'none';
     autosize(input);
@@ -76,9 +101,9 @@
     return li;
   }
 
-  // --- message wire formats (supports JSON or "cid|tid|text" or plain text) ---
+  // --- message wire formats (supports JSON or plain text) ---
   function formatOutgoing(text, tempId) {
-    // Prefer JSON; the original server will just rebroadcast this string intact.
+    // Send JSON object; server may rebroadcast this string (original server will rebroadcast raw string)
     return JSON.stringify({ text, clientId: CLIENT_ID, tempId, timestamp: nowTs() });
   }
 
@@ -98,23 +123,12 @@
       } catch (_) {}
     }
 
-    // 2) Pipe format: "clientId|tempId|text"
+    // 2) Plain text fallback
     if (typeof raw === 'string') {
-      const i1 = raw.indexOf('|');
-      const i2 = i1 >= 0 ? raw.indexOf('|', i1 + 1) : -1;
-      if (i1 > 0 && i2 > i1) {
-        return {
-          clientId: raw.slice(0, i1),
-          tempId: raw.slice(i1 + 1, i2),
-          text: raw.slice(i2 + 1),
-          timestamp: nowTs(),
-        };
-      }
-      // 3) Plain text fallback
       return { clientId: null, tempId: null, text: raw, timestamp: nowTs() };
     }
 
-    // Blob/ArrayBuffer unlikely in your setup; fallback
+    // 3) fallback for other types
     return { clientId: null, tempId: null, text: String(raw), timestamp: nowTs() };
   }
 
@@ -135,8 +149,10 @@
         const t = new Date(msg.timestamp || nowTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         meta.textContent = t;
       }
+      // keep text as-is (server text may be same); remove dataset and pending map
+      delete el.dataset.tempId;
       pending.delete(msg.tempId);
-      return; // stop here — no duplicate append
+      return; // don't append duplicate
     }
 
     // New message (history, others, or our own without optimistic)
@@ -170,22 +186,25 @@
     if (button) button.disabled = true;
   }
 
-  // --- UI wiring (works with both original and updated markup) ---
+  // --- UI wiring ---
   if (form) {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       doSend();
     });
   }
+
   if (button) {
-    button.addEventListener('click', doSend);
+    button.addEventListener('click', (e) => {
+      e.preventDefault();
+      doSend();
+    });
     button.disabled = true;
   }
 
   input.addEventListener('keydown', (e) => {
     // Enter sends; Shift+Enter makes newline (for textarea)
     if (e.key === 'Enter' && !e.shiftKey) {
-      // If it's an <input>, prevent form submission too
       e.preventDefault();
       doSend();
     }
@@ -195,5 +214,8 @@
     if (button) button.disabled = input.value.trim() === '';
     if (input.tagName === 'TEXTAREA') autosize(input);
   });
+
+  // init scroll to bottom if content exists
+  setTimeout(scrollToBottom, 50);
 
 })();
