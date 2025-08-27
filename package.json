@@ -1,0 +1,24 @@
+{
+  "name": "anno",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oceannnnnnnnnnnnn/anno.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/oceannnnnnnnnnnnn/anno/issues"
+  },
+  "homepage": "https://github.com/oceannnnnnnnnnnnn/anno#readme",
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  }
+}

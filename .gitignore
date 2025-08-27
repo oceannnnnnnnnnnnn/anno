@@ -1,0 +1,13 @@
+# Dependency folders
+node_modules/
+
+# Logs
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# OS-specific files
+.DS_Store
+
+# Environment files (if you have secrets later)
+.env
