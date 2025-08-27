@@ -2,14 +2,21 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Anno Global Chat</title>
+  <title>Anno Chat</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    #chat { list-style: none; padding: 0; max-height: 400px; overflow-y: auto; }
+    li { margin-bottom: 5px; }
+    input { width: 70%; padding: 5px; }
+    button { padding: 5px 10px; }
+  </style>
 </head>
 <body>
-  <h1> hi</h1>
-  <input id="msg" placeholder="Type a message">
+  <h1>Anno Chat</h1>
+  <input id="msg" placeholder="Type a message" maxlength="200">
   <button id="send">Send</button>
   <ul id="chat"></ul>
+
   <script src="client.js"></script>
 </body>
 </html>
-    
