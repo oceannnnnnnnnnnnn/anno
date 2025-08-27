@@ -1,48 +1,40 @@
-// Auto-detect ws/wss based on page protocol
 const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
 const ws = new WebSocket(`${protocol}://${window.location.host}`);
 
-// Logs
-ws.onopen = () => console.log('WebSocket connected');
-ws.onerror = (err) => console.error('WebSocket error:', err);
-ws.onclose = () => console.log('WebSocket closed');
-
-ws.onmessage = (event) => {
-  console.log('Received:', event.data);
-  const li = document.createElement('li');
-  li.textContent = event.data;
-  document.getElementById('chat').appendChild(li);
-};
-
-// Input validation
+const chat = document.getElementById('chat');
 const input = document.getElementById('msg');
 const button = document.getElementById('send');
 
-button.onclick = () => {
-  let msg = input.value.trim();
+ws.onopen = () => console.log('WebSocket connected');
+ws.onerror = err => console.error('WebSocket error:', err);
+ws.onclose = () => console.log('WebSocket closed');
 
-  if (msg === '') {
-    alert('Cannot send empty message');
-    return;
-  }
-
-  if (msg.length > 200) {
-    alert('Message is too long');
-    return;
-  }
-
-  const forbidden = /[<>]/;
-  if (forbidden.test(msg)) {
-    alert('Message contains invalid characters');
-    return;
-  }
-
-  ws.send(msg);
-  input.value = '';
+ws.onmessage = event => {
+  const li = document.createElement('li');
+  li.textContent = event.data;
+  li.classList.add('message', 'received');
+  chat.appendChild(li);
+  chat.scrollTop = chat.scrollHeight;
 };
 
-// Optional: disable send button if input is empty
+button.onclick = () => {
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  ws.send(msg);
+  
+  const li = document.createElement('li');
+  li.textContent = msg;
+  li.classList.add('message', 'sent');
+  chat.appendChild(li);
+  chat.scrollTop = chat.scrollHeight;
+
+  input.value = '';
+  button.disabled = true;
+  input.rows = 1;
+};
+
 input.addEventListener('input', () => {
   button.disabled = input.value.trim() === '';
+  input.rows = Math.min(4, Math.ceil(input.value.length / 30)) || 1;
 });
-button.disabled = true; // initial state

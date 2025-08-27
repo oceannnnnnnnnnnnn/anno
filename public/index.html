@@ -1,21 +1,21 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Anno Chat</title>
-  <style>
-    body { font-family: sans-serif; margin: 20px; }
-    #chat { list-style: none; padding: 0; max-height: 400px; overflow-y: auto; }
-    li { margin-bottom: 5px; }
-    input { width: 70%; padding: 5px; }
-    button { padding: 5px 10px; }
-  </style>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>Anno Chat</h1>
-  <input id="msg" placeholder="Type a message" maxlength="200">
-  <button id="send">Send</button>
-  <ul id="chat"></ul>
+  <div id="chat-container">
+    <ul id="chat" role="log" aria-live="polite"></ul>
+
+    <div class="input-area">
+      <textarea id="msg" placeholder="Type a message…" maxlength="200" rows="1"
+                aria-label="Message input"></textarea>
+      <button id="send" disabled aria-label="Send message">Send</button>
+    </div>
+  </div>
 
   <script src="client.js"></script>
 </body>

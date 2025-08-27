@@ -13,6 +13,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // In-memory chat history
 // Each item: { message: string, timestamp: number }
 const chatHistory = [];
+// const MESSAGE_LIFETIME = 24 * 60 * 60 * 1000; // 1 day
 const MESSAGE_LIFETIME = 60 * 1000; // 1 minute in milliseconds
 
 wss.on('connection', (ws) => {
