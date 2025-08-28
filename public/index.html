@@ -8,44 +8,62 @@
   <link href="https://fonts.googleapis.com/css2?family=DynaPuff&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div id="app">
-    <header class="topbar" role="banner">
-      <div class="topbar-left">
-        <!-- <button class="icon-btn menu" aria-label="Menu" title="Menu">
-          <svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true"><rect y="0" width="20" height="2" rx="1"/><rect y="6" width="20" height="2" rx="1"/><rect y="12" width="20" height="2" rx="1"/></svg>
-        </button> -->
-      </div>
+  <div id="app" data-view="public">
 
-      <div class="topbar-center">
-        <div class="title">Anno Chat</div>
-        <div class="subtitle">Anonymous room — messages expire</div>
-      </div>
-
-      <div class="topbar-right">
-        <!-- <button class="icon-btn theme-toggle" aria-label="Toggle theme" title="Toggle theme">
-          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
-        </button> -->
-      </div>
-    </header>
-
-    <main id="chat-container" role="main">
-      <ul id="chat" role="log" aria-live="polite"></ul>
-      <!-- typing indicator (hidden by default, your client can toggle .visible) -->
-      <div id="typing" class="typing" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span> someone is typing…</div>
-    </main>
-
-    <form id="composer" autocomplete="off" aria-label="Message composer">
-      <div class="composer-left">
+    <div id="public-chat-page" class="chat-page">
+      <header class="topbar" role="banner">
+        <div class="topbar-left"></div>
+        <div class="topbar-center">
+          <div class="title">Anno Chat</div>
+          <div class="subtitle">Public Room</div>
+        </div>
+        <div class="topbar-right">
+          <button class="icon-btn dm-open-btn" aria-label="DMs" title="Direct messages">💬</button>
+        </div>
+      </header>
+      <main class="chat-container" role="main">
+        <ul id="public-chat-list" role="log" aria-live="polite"></ul>
+      </main>
+      <form id="public-composer" class="composer-form" autocomplete="off" aria-label="Message composer">
         <button type="button" class="icon-btn attach" aria-label="Attach" title="Attach">📎</button>
-        <input type="file" id="fileInput" accept="image/*" style="display:none" />
-      </div>
+        <textarea class="msg-input" maxlength="500" placeholder="Type a message"></textarea>
+        <button class="send-btn" type="submit" disabled aria-label="Send message">Send</button>
+      </form>
+    </div>
 
-      <textarea id="msg" maxlength="200" placeholder="Type a message" aria-label="Message input"></textarea>
+    <div id="dm-chat-page" class="chat-page">
+      <header class="topbar" role="banner">
+        <div class="topbar-left">
+          <button id="dm-back-btn" class="icon-btn" aria-label="Back to public chat" title="Back">⬅️</button>
+        </div>
+        <div class="topbar-center">
+          <div id="dm-chat-title" class="title">Direct Message</div>
+          <div id="dm-chat-subtitle" class="subtitle"></div>
+        </div>
+        <div class="topbar-right"></div>
+      </header>
+      <main class="chat-container" role="main">
+        <ul id="dm-chat-list" role="log" aria-live="polite"></ul>
+      </main>
+      <form id="dm-composer" class="composer-form" autocomplete="off" aria-label="DM composer">
+        <button type="button" class="icon-btn attach" aria-label="Attach" title="Attach">📎</button>
+        <textarea class="msg-input" maxlength="500" placeholder="Send a private message"></textarea>
+        <button class="send-btn" type="submit" disabled aria-label="Send message">Send</button>
+      </form>
+    </div>
+    
+    <input type="file" id="fileInput" accept="image/*" style="display:none" />
 
-      <div class="composer-right">
-        <button id="send" type="submit" disabled aria-label="Send message">Send</button>
+    <div id="dm-panel" class="dm-panel" aria-hidden="true">
+      <div class="dm-panel-header">
+        <strong>Direct Messages</strong>
+        <button id="dm-close" class="icon-btn" aria-label="Close DMs">✕</button>
       </div>
-    </form>
+      <div class="dm-panel-section">
+        <h4>My Threads</h4>
+        <div id="dm-threads" class="dm-threads"></div>
+      </div>
+    </div>
   </div>
 
   <script src="client.js"></script>

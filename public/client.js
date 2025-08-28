@@ -1,106 +1,103 @@
-// public/client.js
-// Mobile viewport fix + chat client (uses JSON payloads, optimistic UI, duplicate prevention)
-
-// --- Mobile viewport fix (sets --vh and locks body scroll) ---
+// public/client.js (Updated)
 (function () {
-  function setVh() {
-    document.documentElement.style.setProperty('--vh', window.innerHeight * 0.01 + 'px');
-  }
+  'use strict';
+
+  // --- Mobile viewport fix ---
+  const setVh = () => document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
   setVh();
   window.addEventListener('resize', setVh, { passive: true });
-
-  // Prevent body/document scrolling; allow only chat container to scroll.
-  document.documentElement.style.overscrollBehavior = 'none';
-  document.body.style.overscrollBehavior = 'none';
   document.body.style.overflow = 'hidden';
-})();
 
-// --- Chat client (executes after DOM elements are parsed; script is expected at end of body) ---
-(function () {
-  // --- connection ---
+  // --- WebSocket Connection ---
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${protocol}://${window.location.host}`);
 
-  // --- DOM handles (works with index.html structure) ---
-  const chat = document.getElementById('chat');         // <ul id="chat">
-  const input = document.getElementById('msg');         // <textarea id="msg">
-  const button = document.getElementById('send');       // <button id="send">
-  const form = document.getElementById('composer');     // <form id="composer">
-  const chatContainer = document.getElementById('chat-container') || (chat && chat.parentElement);
-  const attachBtn = document.querySelector('.icon-btn.attach');
+  // --- DOM Handles ---
+  const app = document.getElementById('app');
   const fileInput = document.getElementById('fileInput');
-
-  if (attachBtn && fileInput) {
-    attachBtn.addEventListener('click', () => fileInput.click());
-  }
-
-  // Guard: if no essential nodes, bail gracefully
-  if (!chat || !input || !chatContainer) {
-    console.error('Required DOM nodes not found: #chat, #msg, #chat-container');
-    return;
-  }
-
-  // When the input gets focus, scroll chat to bottom after keyboard opens (mobile UX)
-  input.addEventListener('focus', () => {
-    setTimeout(() => {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }, 250);
+  const publicChatList = document.getElementById('public-chat-list');
+  const publicComposer = document.getElementById('public-composer');
+  const dmChatList = document.getElementById('dm-chat-list');
+  const dmComposer = document.getElementById('dm-composer');
+  const dmChatSubtitle = document.getElementById('dm-chat-subtitle');
+  const dmBackButton = document.getElementById('dm-back-btn');
+  const dmPanel = document.getElementById('dm-panel');
+  const dmOpenBtn = document.querySelector('.dm-open-btn');
+  const dmCloseBtn = document.getElementById('dm-close');
+  const dmThreadsEl = document.getElementById('dm-threads');
+  
+  // --- Universal Composer & Attachment Logic ---
+  document.querySelectorAll('.composer-form').forEach(form => {
+    const input = form.querySelector('.msg-input');
+    const sendBtn = form.querySelector('.send-btn');
+    const attachBtn = form.querySelector('.attach');
+    if (attachBtn) attachBtn.addEventListener('click', () => fileInput.click());
+    form.addEventListener('submit', (e) => { e.preventDefault(); sendTextMessage(); });
+    if(input && sendBtn) {
+        input.addEventListener('input', () => { sendBtn.disabled = input.value.trim() === ''; });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTextMessage(); }
+        });
+    }
   });
-  input.addEventListener('blur', () => {
-    setTimeout(() => {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }, 250);
-  });
 
-  // --- identity & pending map ---
+  // --- State ---
   let CLIENT_ID = sessionStorage.getItem('annoClientId');
   if (!CLIENT_ID) {
     CLIENT_ID = 'c_' + Math.random().toString(36).slice(2, 9);
     sessionStorage.setItem('annoClientId', CLIENT_ID);
   }
-  const pending = new Map(); // tempId -> <li>
+  const pending = new Map();
+  const publicMessages = [];
+  const cachedDMs = new Map();
+  const dmThreads = new Set();
+  const unreadCounts = new Map();
+  let activeDM = null;
 
-  // --- utilities ---
-  function nowTs() { return Date.now(); }
-
-  function atBottom() {
-    const c = chatContainer;
-    const dist = c.scrollHeight - c.scrollTop - c.clientHeight;
-    return dist < 120; // px from bottom
+  // --- Utilities ---
+  const dmKey = (a, b) => [a, b].sort().join('|');
+  const now = () => Date.now();
+  const scrollToBottom = (container) => {
+      if(container) setTimeout(() => container.scrollTop = container.scrollHeight, 50);
   }
 
-  function scrollToBottom() {
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+  // --- View Management ---
+  function showView(view, partnerId = null) {
+    if (view === 'dm') {
+      activeDM = partnerId;
+      dmChatSubtitle.textContent = `with ${partnerId}`;
+      app.dataset.view = 'dm';
+      renderDMConversation(partnerId);
+    } else {
+      activeDM = null;
+      app.dataset.view = 'public';
+      renderPublicChat();
+    }
   }
 
-  function autosize(el) {
-    if (!el || el.tagName !== 'TEXTAREA') return;
-    el.style.resize = 'none';            // no manual drag
-    el.style.overflow = 'auto';
-    el.style.height = 'auto';
-    const max = 140; // px
-    el.style.height = Math.min(el.scrollHeight, max) + 'px';
-  }
-
-  if (input && input.tagName === 'TEXTAREA') {
-    input.style.resize = 'none';
-    autosize(input);
-  }
-
-  function createMessageElement({ text, image, clientId, tempId, timestamp }, opts = {}) {
+  // --- DOM Rendering ---
+  function createMessageElement({ text, image, clientId, from, tempId, timestamp }) {
     const li = document.createElement('li');
-    li.className = 'message ' + (clientId === CLIENT_ID ? 'sent' : 'received');
+    const senderId = from || clientId;
+    li.className = 'message ' + (senderId === CLIENT_ID ? 'sent' : 'received');
     if (tempId) li.dataset.tempId = tempId;
-  
+
+    if (senderId && senderId !== CLIENT_ID) {
+      const idBtn = document.createElement('button');
+      idBtn.className = 'user-id-btn';
+      idBtn.textContent = senderId;
+      idBtn.title = 'Open DM with ' + senderId;
+      idBtn.onclick = () => openDM(senderId);
+      li.appendChild(idBtn);
+    }
+
     if (image) {
       const img = document.createElement('img');
       img.src = image;
+      // ✨ --- BLUR FUNCTIONALITY RESTORED --- ✨
       img.className = 'chat-image blurred';
       img.alt = 'Shared image';
-      img.addEventListener('click', () => {
-        img.classList.remove('blurred');
-        img.classList.add('unblurred');
-      });
+      img.onclick = () => img.classList.remove('blurred');
       li.appendChild(img);
     } else {
       const body = document.createElement('div');
@@ -108,162 +105,205 @@
       body.textContent = String(text ?? '');
       li.appendChild(body);
     }
-  
-    // Meta info: timestamp + user ID if it's not me
+
     const meta = document.createElement('span');
     meta.className = 'meta';
-    const t = new Date(timestamp || nowTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  
-    if (clientId !== CLIENT_ID && clientId) {
-      meta.textContent = `${clientId} • ${t}`;
-    } else {
-      meta.textContent = opts.sending ? `${t} • sending` : t;
-    }
+    meta.textContent = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     li.appendChild(meta);
-  
-    if (opts.sending) li.classList.add('sending');
     return li;
   }
-  
 
-  // --- message wire formats (supports JSON or plain text) ---
-  function formatOutgoing(text, tempId) {
-    // Send JSON object; server may rebroadcast this string (original server will rebroadcast raw string)
-    return JSON.stringify({ text, clientId: CLIENT_ID, tempId, timestamp: nowTs() });
+  function renderPublicChat() {
+    publicChatList.innerHTML = '';
+    publicMessages.forEach(msg => publicChatList.appendChild(createMessageElement(msg)));
+    scrollToBottom(publicChatList.parentElement);
   }
 
-  function parseIncoming(raw) {
-    if (typeof raw === 'string' && raw.startsWith('{')) {
-      try {
-        const o = JSON.parse(raw);
-        if (o && typeof o === 'object') {
-          return {
-            text: o.text || null,
-            image: o.image || null,
-            clientId: o.clientId || null,
-            tempId: o.tempId || null,
-            timestamp: o.timestamp || nowTs(),
-          };
-        }
-      } catch (_) {}
-    }
-    return { clientId: null, tempId: null, text: String(raw), image: null, timestamp: nowTs() };
+  function renderDMConversation(partnerId) {
+    dmChatList.innerHTML = '';
+    const key = dmKey(CLIENT_ID, partnerId);
+    const messages = cachedDMs.get(key) || [];
+    messages.forEach(msg => dmChatList.appendChild(createMessageElement(msg)));
+    unreadCounts.delete(partnerId);
+    renderDMPanel();
+    scrollToBottom(dmChatList.parentElement);
   }
   
-
-  // --- websocket handlers ---
-  ws.addEventListener('open', () => console.log('WebSocket connected'));
-  ws.addEventListener('error', (e) => console.error('WebSocket error:', e));
-  ws.addEventListener('close', () => console.log('WebSocket closed'));
-
-  ws.addEventListener('message', (evt) => {
-    const msg = parseIncoming(evt.data);
-
-    // If this is our echo for a pending tempId, update the optimistic bubble instead of appending a duplicate
-    if (msg.clientId === CLIENT_ID && msg.tempId && pending.has(msg.tempId)) {
-      const el = pending.get(msg.tempId);
-      el.classList.remove('sending');
-      const meta = el.querySelector('.meta');
-      if (meta) {
-        const t = new Date(msg.timestamp || nowTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        meta.textContent = t;
-      }
-      // keep text as-is (server text may be same); remove dataset and pending map
-      delete el.dataset.tempId;
-      pending.delete(msg.tempId);
-      return; // don't append duplicate
-    }
-
-    // New message (history, others, or our own without optimistic)
-    const shouldScroll = atBottom();
-    const el = createMessageElement(msg);
-    chat.appendChild(el);
-    if (shouldScroll) scrollToBottom();
-  });
-
-  fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-  
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result; // Base64 encoded image
-      sendImage(dataUrl);
-    };
-    reader.readAsDataURL(file);
-  
-    // Reset input so selecting the same file again triggers change
-    fileInput.value = '';
-  });
-  
-  function sendImage(dataUrl) {
-    const tempId = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-  
-    const optimistic = { image: dataUrl, clientId: CLIENT_ID, tempId, timestamp: nowTs() };
-    const el = createMessageElement(optimistic, { sending: true });
-    const shouldScroll = atBottom();
-    chat.appendChild(el);
-    pending.set(tempId, el);
-    if (shouldScroll) scrollToBottom();
-  
-    ws.send(JSON.stringify({ image: dataUrl, clientId: CLIENT_ID, tempId, timestamp: nowTs() }));
+  function renderDMPanel() {
+    if (!dmPanel) return;
+    dmThreadsEl.innerHTML = '';
+    const threads = Array.from(dmThreads);
+    if (threads.length > 0) {
+      threads.forEach(p => {
+        const unread = unreadCounts.get(p) || 0;
+        const row = document.createElement('div');
+        row.className = 'dm-thread';
+        row.innerHTML = `<span>${p}</span><span class="dm-thread-meta">${unread > 0 ? `${unread} new` : ''}</span>`;
+        row.onclick = () => { openDM(p); dmPanel.classList.remove('open'); };
+        dmThreadsEl.appendChild(row);
+      });
+    } else { dmThreadsEl.innerHTML = `<div class="dm-empty">No active DMs. Click a user's ID to start one.</div>`; }
   }
   
+  // --- Actions ---
+  function openDM(partnerId) {
+    if (partnerId === CLIENT_ID) return;
+    showView('dm', partnerId);
+  }
 
-  // --- sending ---
-  function doSend() {
+  function sendTextMessage() {
+    const composer = activeDM ? dmComposer : publicComposer;
+    const input = composer.querySelector('.msg-input');
     const text = (input.value || '').trim();
     if (!text) return;
 
-    const tempId = 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const tempId = 't_' + now() + '_' + Math.random().toString(36).slice(2, 6);
+    const optimisticMsg = { text, from: CLIENT_ID, tempId, timestamp: now() };
+    const el = createMessageElement(optimisticMsg);
+    el.classList.add('sending');
 
-    // optimistic bubble
-    const optimistic = { text, clientId: CLIENT_ID, tempId, timestamp: nowTs() };
-    const el = createMessageElement(optimistic, { sending: true });
-    const shouldScroll = atBottom();
-    chat.appendChild(el);
-    pending.set(tempId, el);
-    if (shouldScroll) scrollToBottom();
+    if (activeDM) {
+      dmChatList.appendChild(el);
+      scrollToBottom(dmChatList.parentElement);
+      ws.send(JSON.stringify({ type: 'dm', to: activeDM, text, tempId }));
+    } else {
+      publicChatList.appendChild(el);
+      scrollToBottom(publicChatList.parentElement);
+      ws.send(JSON.stringify({ type: 'public', text, tempId }));
+    }
 
-    // send
-    ws.send(formatOutgoing(text, tempId));
-
-    // reset input
+    pending.set(tempId, { el });
     input.value = '';
-    if (input.tagName === 'TEXTAREA') autosize(input);
-    if (button) button.disabled = true;
+    composer.querySelector('.send-btn').disabled = true;
+  }
+  
+  function sendImageWithCompression(file) {
+      const MAX_WIDTH = 800;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+          const img = document.createElement("img");
+          img.onload = () => {
+              const canvas = document.createElement('canvas');
+              const scale = Math.min(1, MAX_WIDTH / img.width);
+              canvas.width = img.width * scale;
+              canvas.height = img.height * scale;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              const dataUrl = canvas.toDataURL(file.type, 0.85);
+              const tempId = 'img_' + now() + '_' + Math.random().toString(36).slice(2, 6);
+              const optimisticMsg = { image: dataUrl, from: CLIENT_ID, tempId, timestamp: now() };
+              const el = createMessageElement(optimisticMsg);
+              el.classList.add('sending');
+              
+              if (activeDM) {
+                  dmChatList.appendChild(el);
+                  scrollToBottom(dmChatList.parentElement);
+                  ws.send(JSON.stringify({ type: 'dm', to: activeDM, image: dataUrl, tempId }));
+              } else {
+                  publicChatList.appendChild(el);
+                  scrollToBottom(publicChatList.parentElement);
+                  ws.send(JSON.stringify({ type: 'public', image: dataUrl, tempId }));
+              }
+              pending.set(tempId, { el });
+          };
+          img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
   }
 
-  // --- UI wiring ---
-  if (form) {
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      doSend();
-    });
-  }
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    sendImageWithCompression(file);
+    e.target.value = '';
+  });
+  
+  // --- WebSocket Handlers ---
+  ws.addEventListener('open', () => ws.send(JSON.stringify({ type: 'hello', clientId: CLIENT_ID })));
+  ws.addEventListener('message', (evt) => {
+    let msg;
+    try { msg = JSON.parse(evt.data); } 
+    catch (e) { return; }
 
-  if (button) {
-    button.addEventListener('click', (e) => {
-      e.preventDefault();
-      doSend();
-    });
-    button.disabled = true;
-  }
+    switch (msg.type) {
+      case 'hello-ack':
+        if (msg.clientId !== CLIENT_ID) {
+          CLIENT_ID = msg.clientId;
+          sessionStorage.setItem('annoClientId', CLIENT_ID);
+        }
+        break;
 
-  input.addEventListener('keydown', (e) => {
-    // Enter sends; Shift+Enter makes newline (for textarea)
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      doSend();
+      case 'public-history':
+        publicMessages.push(...msg.messages);
+        if(!activeDM) renderPublicChat();
+        break;
+
+      case 'dm-threads':
+        dmThreads.clear();
+        (msg.partners || []).forEach(p => dmThreads.add(p));
+        renderDMPanel();
+        break;
+      
+      case 'public': {
+        // ✨ --- DOUBLE-MESSAGE BUG FIX --- ✨
+        // If this is the echo of our own message, update its status and stop.
+        if (msg.clientId === CLIENT_ID && msg.tempId && pending.has(msg.tempId)) {
+          const pendingMsg = pending.get(msg.tempId);
+          pendingMsg.el.classList.remove('sending');
+          // Optionally update the timestamp on the optimistic message
+          const meta = pendingMsg.el.querySelector('.meta');
+          if (meta) {
+              meta.textContent = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          }
+          pending.delete(msg.tempId);
+          publicMessages.push(msg); // Add the final message to history
+          return; // Exit here to prevent rendering a duplicate message
+        }
+
+        // Otherwise, it's a message from someone else, so render it.
+        publicMessages.push(msg);
+        if (!activeDM) {
+          publicChatList.appendChild(createMessageElement(msg));
+          scrollToBottom(publicChatList.parentElement);
+        }
+        break;
+      }
+
+      case 'dm': {
+        const partner = msg.from === CLIENT_ID ? msg.to : msg.from;
+        const key = dmKey(CLIENT_ID, partner);
+        const list = cachedDMs.get(key) || [];
+        list.push(msg);
+        cachedDMs.set(key, list);
+
+        if (msg.echoed && msg.tempId && pending.has(msg.tempId)) {
+          const pendingMsg = pending.get(msg.tempId);
+          pendingMsg.el.classList.remove('sending');
+          const meta = pendingMsg.el.querySelector('.meta');
+          if (meta) {
+            meta.textContent = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          }
+          pending.delete(msg.tempId);
+        } else if (activeDM === partner) {
+          dmChatList.appendChild(createMessageElement(msg));
+          scrollToBottom(dmChatList.parentElement);
+        } else if (msg.from !== CLIENT_ID) {
+          unreadCounts.set(partner, (unreadCounts.get(partner) || 0) + 1);
+          renderDMPanel();
+        }
+        break;
+      }
     }
   });
 
-  input.addEventListener('input', () => {
-    if (button) button.disabled = input.value.trim() === '';
-    if (input.tagName === 'TEXTAREA') autosize(input);
+  // --- UI Event Listeners ---
+  dmOpenBtn.addEventListener('click', () => { dmPanel.classList.add('open'); renderDMPanel(); });
+  dmCloseBtn.addEventListener('click', () => dmPanel.classList.remove('open'));
+  dmBackButton.addEventListener('click', () => showView('public'));
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (dmPanel.classList.contains('open')) dmPanel.classList.remove('open');
+      else if (activeDM) showView('public');
+    }
   });
-
-  // init scroll to bottom if content exists
-  setTimeout(scrollToBottom, 50);
-
 })();
