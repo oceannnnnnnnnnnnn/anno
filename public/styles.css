@@ -263,3 +263,25 @@ html, body {
   #msg{font-size:16px}
   .message{font-size:16px}
 }
+
+.message img.chat-image {
+  max-width: 100%;             /* never overflow the chat bubble/container */
+  max-height: 40vh;            /* image won't be taller than 40% of viewport height */
+  width: auto;                 /* maintain aspect ratio */
+  height: auto;                /* maintain aspect ratio */
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: block;
+  margin-top: 8px;
+  box-shadow: var(--shadow);
+  object-fit: contain;         /* ensures image fits inside the box without cropping */
+}
+
+.message img.blurred {
+  filter: blur(12px);
+  transition: filter 0.2s ease;
+}
+
+.message img.unblurred {
+  filter: none;
+}

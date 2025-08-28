@@ -15,7 +15,7 @@ app.use(express.static(path.join(__dirname, "public")));
 // In-memory chat history (kept as objects)
 // Each item: { text: string, clientId: string|null, tempId?: string, timestamp: number }
 const chatHistory = [];
-const MESSAGE_LIFETIME = 60 * 1000; // 1 minute for your current tests
+const MESSAGE_LIFETIME = 3600 * 1000; // 60 minute for your current tests
 
 wss.on("connection", (ws) => {
   console.log("New client connected");

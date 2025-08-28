@@ -27,6 +27,12 @@
   const button = document.getElementById('send');       // <button id="send">
   const form = document.getElementById('composer');     // <form id="composer">
   const chatContainer = document.getElementById('chat-container') || (chat && chat.parentElement);
+  const attachBtn = document.querySelector('.icon-btn.attach');
+  const fileInput = document.getElementById('fileInput');
+
+  if (attachBtn && fileInput) {
+    attachBtn.addEventListener('click', () => fileInput.click());
+  }
 
   // Guard: if no essential nodes, bail gracefully
   if (!chat || !input || !chatContainer) {
@@ -81,25 +87,44 @@
     autosize(input);
   }
 
-  function createMessageElement({ text, clientId, tempId, timestamp }, opts = {}) {
+  function createMessageElement({ text, image, clientId, tempId, timestamp }, opts = {}) {
     const li = document.createElement('li');
     li.className = 'message ' + (clientId === CLIENT_ID ? 'sent' : 'received');
     if (tempId) li.dataset.tempId = tempId;
-
-    const body = document.createElement('div');
-    body.className = 'text';
-    body.textContent = String(text ?? '');
-    li.appendChild(body);
-
+  
+    if (image) {
+      const img = document.createElement('img');
+      img.src = image;
+      img.className = 'chat-image blurred';
+      img.alt = 'Shared image';
+      img.addEventListener('click', () => {
+        img.classList.remove('blurred');
+        img.classList.add('unblurred');
+      });
+      li.appendChild(img);
+    } else {
+      const body = document.createElement('div');
+      body.className = 'text';
+      body.textContent = String(text ?? '');
+      li.appendChild(body);
+    }
+  
+    // Meta info: timestamp + user ID if it's not me
     const meta = document.createElement('span');
     meta.className = 'meta';
     const t = new Date(timestamp || nowTs()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    meta.textContent = opts.sending ? `${t} • sending` : t;
+  
+    if (clientId !== CLIENT_ID && clientId) {
+      meta.textContent = `${clientId} • ${t}`;
+    } else {
+      meta.textContent = opts.sending ? `${t} • sending` : t;
+    }
     li.appendChild(meta);
-
+  
     if (opts.sending) li.classList.add('sending');
     return li;
   }
+  
 
   // --- message wire formats (supports JSON or plain text) ---
   function formatOutgoing(text, tempId) {
@@ -108,29 +133,23 @@
   }
 
   function parseIncoming(raw) {
-    // 1) JSON payload
     if (typeof raw === 'string' && raw.startsWith('{')) {
       try {
         const o = JSON.parse(raw);
-        if (o && typeof o === 'object' && 'text' in o) {
+        if (o && typeof o === 'object') {
           return {
-            text: String(o.text ?? ''),
-            clientId: o.clientId ?? null,
-            tempId: o.tempId ?? null,
-            timestamp: o.timestamp ?? nowTs(),
+            text: o.text || null,
+            image: o.image || null,
+            clientId: o.clientId || null,
+            tempId: o.tempId || null,
+            timestamp: o.timestamp || nowTs(),
           };
         }
       } catch (_) {}
     }
-
-    // 2) Plain text fallback
-    if (typeof raw === 'string') {
-      return { clientId: null, tempId: null, text: raw, timestamp: nowTs() };
-    }
-
-    // 3) fallback for other types
-    return { clientId: null, tempId: null, text: String(raw), timestamp: nowTs() };
+    return { clientId: null, tempId: null, text: String(raw), image: null, timestamp: nowTs() };
   }
+  
 
   // --- websocket handlers ---
   ws.addEventListener('open', () => console.log('WebSocket connected'));
@@ -161,6 +180,35 @@
     chat.appendChild(el);
     if (shouldScroll) scrollToBottom();
   });
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+  
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result; // Base64 encoded image
+      sendImage(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  
+    // Reset input so selecting the same file again triggers change
+    fileInput.value = '';
+  });
+  
+  function sendImage(dataUrl) {
+    const tempId = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  
+    const optimistic = { image: dataUrl, clientId: CLIENT_ID, tempId, timestamp: nowTs() };
+    const el = createMessageElement(optimistic, { sending: true });
+    const shouldScroll = atBottom();
+    chat.appendChild(el);
+    pending.set(tempId, el);
+    if (shouldScroll) scrollToBottom();
+  
+    ws.send(JSON.stringify({ image: dataUrl, clientId: CLIENT_ID, tempId, timestamp: nowTs() }));
+  }
+  
 
   // --- sending ---
   function doSend() {
