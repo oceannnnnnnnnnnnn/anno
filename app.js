@@ -1,6 +1,6 @@
 // app.js (restored DM functionality, validated)
 // Loads env from anno.env by default (dev). In production use real env vars.
-require('dotenv').config({ path: 'anno.env' });
+require('dotenv').config();
 
 const express = require('express');
 const http = require('http');
