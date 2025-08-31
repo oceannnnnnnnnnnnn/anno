@@ -1,25 +1,115 @@
-// app.js (Refactored)
-const express = require("express");
-const http = require("http");
-const path = require("path");
-const WebSocket = require("ws");
+// app.js (restored DM functionality, validated)
+// Loads env from anno.env by default (dev). In production use real env vars.
+require('dotenv').config({ path: 'anno.env' });
 
+const express = require('express');
+const http = require('http');
+const path = require('path');
+const WebSocket = require('ws');
+const { createClient } = require('@supabase/supabase-js');
+
+const uploadRouter = require('./routes/upload'); // your upload & signed-url endpoints
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({ server, perMessageDeflate: {} });
 
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
 
-// --- In-Memory State ---
-const chatHistory = [];
-const sockets = new Map(); // clientId -> WebSocket instance
-const dmHistory = new Map(); // dmKey -> [messages]
-const dmThreads = new Map(); // clientId -> Set(partnerId)
+// --- Supabase (service role key required in env) ---
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in env');
+  process.exit(1);
+}
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
 
-// --- Constants ---
-const MESSAGE_LIFETIME = 86400 * 1000; // 24 hours
+// Mount media router (contains /upload and /signed-url)
+app.use('/media', uploadRouter);
 
-// --- Utility Functions ---
+// --- DB helper functions (persist messages) ---
+async function insertPublicMessage({ fromId, text, media }) {
+  try {
+    const payload = {
+      kind: 'public',
+      from_id: fromId,
+      text: text || null,
+      media_key: media?.key || null,
+      media_url: media?.url || null,
+      media_kind: media?.kind || null
+    };
+    const { data, error } = await supabase
+      .from('messages')
+      .insert(payload)
+      .select('id, created_at')
+      .single();
+    if (error) {
+      console.error('insertPublicMessage error:', error);
+      return null;
+    }
+    return data;
+  } catch (e) {
+    console.error('insertPublicMessage exception:', e);
+    return null;
+  }
+}
+
+async function insertDMMessage({ dmKeyVal, fromId, toId, text, media }) {
+  try {
+    const payload = {
+      kind: 'dm',
+      dm_key: dmKeyVal,
+      from_id: fromId,
+      to_id: toId,
+      text: text || null,
+      media_key: media?.key || null,
+      media_url: media?.url || null,
+      media_kind: media?.kind || null
+    };
+    const { data, error } = await supabase
+      .from('messages')
+      .insert(payload)
+      .select('id, created_at')
+      .single();
+    if (error) {
+      console.error('insertDMMessage error:', error);
+      return null;
+    }
+    return data;
+  } catch (e) {
+    console.error('insertDMMessage exception:', e);
+    return null;
+  }
+}
+
+// Ensure DM thread exists (upsert into dm_threads)
+async function ensureDMThreadExists(dmKeyVal, a, b) {
+  try {
+    const payload = {
+      dm_key: dmKeyVal,
+      user_a: a < b ? a : b,
+      user_b: a < b ? b : a
+    };
+    const { error } = await supabase.from('dm_threads').upsert(payload, { onConflict: 'dm_key' });
+    if (error) console.error('ensureDMThreadExists error:', error);
+  } catch (e) {
+    console.error('ensureDMThreadExists exception:', e);
+  }
+}
+
+// --- In-memory runtime state (fast lookups, not durable) ---
+const sockets = new Map();         // clientId -> ws
+const chatHistory = [];           // recent public messages (optimistic cache)
+const dmHistory = new Map();      // dmKey -> [messages]
+const dmThreadsMemory = new Map(); // clientId -> Set(partnerIds)
+
+// Expose in-memory threads for other modules that rely on global (some code used global.__dmThreads)
+global.__dmThreads = dmThreadsMemory;
+
+// helpers
+const MESSAGE_LIFETIME = 24 * 60 * 60 * 1000; // 24 hours
 const dmKey = (a, b) => [a, b].sort().join('|');
 const now = () => Date.now();
 
@@ -37,98 +127,181 @@ function broadcast(dataObj) {
   });
 }
 
-// --- WebSocket Connection Handling ---
-wss.on("connection", (ws) => {
+// --- WebSocket connection handling (restores full DM functionality) ---
+wss.on('connection', (ws) => {
   let myClientId = null;
 
-  ws.on("message", (raw) => {
+  ws.on('message', async (raw) => {
     let msg;
-    try { msg = JSON.parse(raw); } 
-    catch (e) { return; }
+    try {
+      msg = JSON.parse(raw);
+    } catch (e) {
+      // ignore non-json
+      return;
+    }
 
-    // --- Handshake: Client must introduce itself first ---
+    // --- handshake: client must send hello with clientId (or we'll assign one) ---
     if (msg.type === 'hello') {
       myClientId = String(msg.clientId || ('s_' + Math.random().toString(36).slice(2, 9)));
       sockets.set(myClientId, ws);
       ws._clientId = myClientId;
 
-      if (!dmThreads.has(myClientId)) dmThreads.set(myClientId, new Set());
+      // ensure memory set exists
+      if (!dmThreadsMemory.has(myClientId)) dmThreadsMemory.set(myClientId, new Set());
 
-      // Send acknowledgment and initial state
+      // reply hello ack and threads + recent public history
       sendTo(myClientId, { type: 'hello-ack', clientId: myClientId });
-      sendTo(myClientId, { type: 'dm-threads', partners: Array.from(dmThreads.get(myClientId) || []) });
-      
-      const recentHistory = chatHistory.filter(item => now() - item.timestamp <= MESSAGE_LIFETIME);
-      sendTo(myClientId, { type: 'public-history', messages: recentHistory });
+      sendTo(myClientId, { type: 'dm-threads', partners: Array.from(dmThreadsMemory.get(myClientId) || []) });
+
+      // async: load threads from supabase (if any) and send to client
+      (async () => {
+        try {
+          const { data: threads, error } = await supabase
+            .from('dm_threads')
+            .select('dm_key, user_a, user_b')
+            .or(`user_a.eq.${myClientId},user_b.eq.${myClientId}`);
+
+          if (!error && Array.isArray(threads)) {
+            const partners = [];
+            threads.forEach(t => {
+              const partner = (t.user_a === myClientId) ? t.user_b : t.user_a;
+              partners.push(partner);
+              const set = dmThreadsMemory.get(myClientId) || new Set();
+              set.add(partner);
+              dmThreadsMemory.set(myClientId, set);
+            });
+            sendTo(myClientId, { type: 'dm-threads', partners });
+          }
+        } catch (e) {
+          console.error('load dm threads error', e);
+        }
+      })();
+
+      // async: load recent public history from DB and send
+      (async () => {
+        try {
+          const { data: pubRows, error } = await supabase
+            .from('messages')
+            .select('from_id, text, media_key, media_url, media_kind, created_at')
+            .eq('kind', 'public')
+            .order('created_at', { ascending: false })
+            .limit(100);
+
+          if (!error && Array.isArray(pubRows)) {
+            const publicMsgs = (pubRows || []).reverse().map(r => ({
+              type: 'public',
+              clientId: r.from_id,
+              text: r.text,
+              media: r.media_key ? { kind: r.media_kind, key: r.media_key, url: r.media_url, scope: 'public' } : null,
+              timestamp: new Date(r.created_at).getTime()
+            }));
+            sendTo(myClientId, { type: 'public-history', messages: publicMsgs });
+          } else {
+            // fallback to in-memory
+            const recentHistory = chatHistory.filter(item => now() - item.timestamp <= MESSAGE_LIFETIME);
+            sendTo(myClientId, { type: 'public-history', messages: recentHistory });
+          }
+        } catch (e) {
+          console.error('load public history error', e);
+        }
+      })();
+
       return;
     }
 
-    if (!myClientId) return; // Ignore messages until handshake is complete
+    // require handshake before other messages
+    if (!myClientId) return;
 
+    // annotate timestamp
     msg.timestamp = now();
 
-    // --- Message Routing ---
+    // --- message routing ---
     switch (msg.type) {
       case 'public': {
-        const obj = { type: 'public', clientId: myClientId, text: msg.text, image: msg.image, tempId: msg.tempId, timestamp: msg.timestamp };
+        const obj = {
+          type: 'public',
+          clientId: myClientId,
+          text: msg.text || null,
+          media: msg.media || null,
+          tempId: msg.tempId || null,
+          timestamp: msg.timestamp
+        };
+
+        // store in in-memory history (quick reconnect)
         chatHistory.push(obj);
+        if (chatHistory.length > 500) chatHistory.shift();
+
+        // broadcast to all connected clients
         broadcast(obj);
+
+        // persist to Supabase (fire-and-forget)
+        insertPublicMessage({ fromId: myClientId, text: msg.text, media: msg.media }).catch(console.error);
         break;
       }
-      
+
       case 'dm': {
         const to = String(msg.to || '');
         if (!to || to === myClientId) return;
-        
+
         const key = dmKey(myClientId, to);
+
         const record = {
           type: 'dm',
           dmKey: key,
           from: myClientId,
           to,
           text: msg.text || null,
-          image: msg.image || null,
+          media: msg.media || null,
           tempId: msg.tempId || null,
           timestamp: msg.timestamp
         };
 
-        // Add message to history
+        // in-memory DM cache
         const list = dmHistory.get(key) || [];
         list.push(record);
+        if (list.length > 500) list.shift();
         dmHistory.set(key, list);
-        
-        // **IMPORTANT**: Auto-create thread if it's the first message
-        const myThreads = dmThreads.get(myClientId) || new Set();
-        if (!myThreads.has(to)) {
-            myThreads.add(to);
-            dmThreads.set(myClientId, myThreads);
-            // Also notify our client UI to update its thread list
-            sendTo(myClientId, { type: 'dm-threads', partners: Array.from(myThreads) });
+
+        // ensure DM thread is reflected in memory for both users and notify them of thread list
+        const setA = dmThreadsMemory.get(myClientId) || new Set();
+        if (!setA.has(to)) {
+          setA.add(to);
+          dmThreadsMemory.set(myClientId, setA);
+          sendTo(myClientId, { type: 'dm-threads', partners: Array.from(setA) });
         }
-        
-        const partnerThreads = dmThreads.get(to) || new Set();
-        if(!partnerThreads.has(myClientId)) {
-            partnerThreads.add(myClientId);
-            dmThreads.set(to, partnerThreads);
-            // Also notify the partner's UI to update their thread list
-            sendTo(to, { type: 'dm-threads', partners: Array.from(partnerThreads) });
+        const setB = dmThreadsMemory.get(to) || new Set();
+        if (!setB.has(myClientId)) {
+          setB.add(myClientId);
+          dmThreadsMemory.set(to, setB);
+          sendTo(to, { type: 'dm-threads', partners: Array.from(setB) });
         }
 
-        // Send to recipient and echo to sender
+        // send to recipient if connected
         sendTo(to, record);
+        // echo to sender with echoed flag so client can finalize optimistic UI
         sendTo(myClientId, { ...record, echoed: true });
+
+        // ensure DM thread exists in DB and persist DM message (fire-and-forget)
+        ensureDMThreadExists(key, myClientId, to).catch(console.error);
+        insertDMMessage({ dmKeyVal: key, fromId: myClientId, toId: to, text: msg.text, media: msg.media }).catch(console.error);
         break;
       }
+
+      // ignore unknown types
     }
   });
 
-  ws.on("close", () => {
+  ws.on('close', () => {
     if (myClientId) {
       sockets.delete(myClientId);
-      console.log("Client disconnected:", myClientId);
+      console.log('Client disconnected:', myClientId);
     }
   });
 });
 
+// start server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+
+// export for tests/tools if needed
+module.exports = { app, server, wss };

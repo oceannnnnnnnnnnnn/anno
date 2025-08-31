@@ -18,7 +18,17 @@
   },
   "homepage": "https://github.com/oceannnnnnnnnnnnn/anno#readme",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.879.0",
+    "@aws-sdk/s3-request-presigner": "^3.879.0",
+    "@supabase/supabase-js": "^2.56.1",
+    "aws-sdk": "^2.1692.0",
+    "dotenv": "^17.2.1",
     "express": "^5.1.0",
-    "ws": "^8.18.3"
+    "multer": "^2.0.2",
+    "pg": "^8.16.3",
+    "sharp": "^0.34.3",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.3",
+    "zod": "^4.1.5"
   }
 }

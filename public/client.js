@@ -1,4 +1,4 @@
-// public/client.js (Updated)
+// public/client.js (Fixed DM view switching + restored title handling)
 (function () {
   'use strict';
 
@@ -19,13 +19,14 @@
   const publicComposer = document.getElementById('public-composer');
   const dmChatList = document.getElementById('dm-chat-list');
   const dmComposer = document.getElementById('dm-composer');
+  const dmChatTitle = document.getElementById('dm-chat-title');      // <- added
   const dmChatSubtitle = document.getElementById('dm-chat-subtitle');
   const dmBackButton = document.getElementById('dm-back-btn');
   const dmPanel = document.getElementById('dm-panel');
   const dmOpenBtn = document.querySelector('.dm-open-btn');
   const dmCloseBtn = document.getElementById('dm-close');
   const dmThreadsEl = document.getElementById('dm-threads');
-  
+
   // --- Universal Composer & Attachment Logic ---
   document.querySelectorAll('.composer-form').forEach(form => {
     const input = form.querySelector('.msg-input');
@@ -61,22 +62,28 @@
       if(container) setTimeout(() => container.scrollTop = container.scrollHeight, 50);
   }
 
-  // --- View Management ---
-  function showView(view, partnerId = null) {
-    if (view === 'dm') {
-      activeDM = partnerId;
-      dmChatSubtitle.textContent = `with ${partnerId}`;
-      app.dataset.view = 'dm';
-      renderDMConversation(partnerId);
-    } else {
-      activeDM = null;
-      app.dataset.view = 'public';
-      renderPublicChat();
-    }
+  // --- Presigned cache (must be before resolver) ---
+  const presignedCache = new Map(); // key -> { url, expiresAt }
+
+  async function resolvePresignedUrl(key) {
+    // cache entries for ~4 minutes
+    const cached = presignedCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.url;
+  
+    const resp = await fetch(`/media/signed-url?key=${encodeURIComponent(key)}`, {
+      headers: { 'X-Client-Id': CLIENT_ID } // server uses this to validate DM membership
+    });
+    if (!resp.ok) throw new Error('failed to get signed url');
+    const { url } = await resp.json();
+    // store with expiry ~4m
+    presignedCache.set(key, { url, expiresAt: Date.now() + (4 * 60 * 1000) });
+    return url;
   }
+  
 
   // --- DOM Rendering ---
-  function createMessageElement({ text, image, clientId, from, tempId, timestamp }) {
+  function createMessageElement(msg) {
+    const { text, image, media, clientId, from, tempId, timestamp } = msg;
     const li = document.createElement('li');
     const senderId = from || clientId;
     li.className = 'message ' + (senderId === CLIENT_ID ? 'sent' : 'received');
@@ -91,27 +98,65 @@
       li.appendChild(idBtn);
     }
 
-    if (image) {
+    const content = document.createElement('div');
+    content.className = 'content';
+
+    // MEDIA handling
+    if (media && media.kind) {
+      if (media.kind === 'image') {
+        const img = document.createElement('img');
+        img.alt = 'Shared image';
+        img.className = 'chat-image blurred';
+        img.onclick = () => img.classList.remove('blurred');
+
+        // If server returned an immediate public URL (public images), use it:
+        if (media.url) {
+          img.src = media.url;
+        } else {
+          // for DM/private images, get a presigned URL
+          resolvePresignedUrl(media.key).then(url => {
+            img.src = url;
+          }).catch(err => {
+            console.error('failed to get signed url', err);
+            img.alt = 'Could not load image';
+          });
+        }
+        content.appendChild(img);
+
+      } else if (media.kind === 'video') {
+        const vid = document.createElement('video');
+        vid.controls = true;
+        vid.preload = 'metadata';
+        // If public URL returned:
+        if (media.url) {
+          vid.src = media.url;
+        } else {
+          resolvePresignedUrl(media.key).then(url => { vid.src = url; }).catch(() => { vid.alt = 'Could not load video'; });
+        }
+        content.appendChild(vid);
+      }
+    } else if (image) {
+      // legacy base64 path
       const img = document.createElement('img');
       img.src = image;
-      // ✨ --- BLUR FUNCTIONALITY RESTORED --- ✨
       img.className = 'chat-image blurred';
       img.alt = 'Shared image';
       img.onclick = () => img.classList.remove('blurred');
-      li.appendChild(img);
-    } else {
-      const body = document.createElement('div');
-      body.className = 'text';
-      body.textContent = String(text ?? '');
-      li.appendChild(body);
+      content.appendChild(img);
+    } else if (text) {
+      content.textContent = String(text ?? '');
     }
+
+    li.appendChild(content);
 
     const meta = document.createElement('span');
     meta.className = 'meta';
     meta.textContent = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     li.appendChild(meta);
+
     return li;
   }
+
 
   function renderPublicChat() {
     publicChatList.innerHTML = '';
@@ -145,8 +190,42 @@
     } else { dmThreadsEl.innerHTML = `<div class="dm-empty">No active DMs. Click a user's ID to start one.</div>`; }
   }
   
+  // --- VIEW SWITCHING (fixed) ---
+  function showView(view, partnerId) {
+    if (view === 'public') {
+      app.setAttribute('data-view', 'public');
+      activeDM = null;
+      // reset DM header
+      if (dmChatTitle) dmChatTitle.textContent = 'Direct Message';
+      if (dmChatSubtitle) dmChatSubtitle.textContent = '';
+      // enable/disable send buttons are handled by composer input listeners
+      // optionally focus public composer input
+      const inEl = publicComposer.querySelector('.msg-input');
+      if (inEl) inEl.focus();
+      // re-render public list just in case
+      renderPublicChat();
+    } else if (view === 'dm') {
+      if (!partnerId) return;
+      activeDM = String(partnerId);
+      app.setAttribute('data-view', 'dm');
+      // set DM header/subtitle
+      if (dmChatTitle) dmChatTitle.textContent = `Chat`;
+      if (dmChatSubtitle) dmChatSubtitle.textContent = partnerId;
+      // show cached messages for this DM
+      renderDMConversation(partnerId);
+      // focus DM composer input
+      const inEl = dmComposer.querySelector('.msg-input');
+      if (inEl) {
+        inEl.value = '';
+        dmComposer.querySelector('.send-btn').disabled = true;
+        inEl.focus();
+      }
+    }
+  }
+
   // --- Actions ---
   function openDM(partnerId) {
+    if (!partnerId) return;
     if (partnerId === CLIENT_ID) return;
     showView('dm', partnerId);
   }
@@ -177,39 +256,61 @@
     composer.querySelector('.send-btn').disabled = true;
   }
   
-  function sendImageWithCompression(file) {
-      const MAX_WIDTH = 800;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-          const img = document.createElement("img");
-          img.onload = () => {
-              const canvas = document.createElement('canvas');
-              const scale = Math.min(1, MAX_WIDTH / img.width);
-              canvas.width = img.width * scale;
-              canvas.height = img.height * scale;
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              const dataUrl = canvas.toDataURL(file.type, 0.85);
-              const tempId = 'img_' + now() + '_' + Math.random().toString(36).slice(2, 6);
-              const optimisticMsg = { image: dataUrl, from: CLIENT_ID, tempId, timestamp: now() };
-              const el = createMessageElement(optimisticMsg);
-              el.classList.add('sending');
-              
-              if (activeDM) {
-                  dmChatList.appendChild(el);
-                  scrollToBottom(dmChatList.parentElement);
-                  ws.send(JSON.stringify({ type: 'dm', to: activeDM, image: dataUrl, tempId }));
-              } else {
-                  publicChatList.appendChild(el);
-                  scrollToBottom(publicChatList.parentElement);
-                  ws.send(JSON.stringify({ type: 'public', image: dataUrl, tempId }));
-              }
-              pending.set(tempId, { el });
-          };
-          img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
+  async function sendImageWithCompression(file) {
+    const MAX_WIDTH = 720;
+    // load into bitmap for better memory usage
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_WIDTH / bitmap.width);
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+  
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+  
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.5));
+  
+    // Build multipart body (includes scope/dmKey)
+    const fd = new FormData();
+    fd.append('file', blob, file.name.replace(/\s+/g, '_'));
+    fd.append('scope', activeDM ? 'dm' : 'public');
+    if (activeDM) fd.append('dmKey', dmKey(CLIENT_ID, activeDM));
+  
+    // show optimistic UI
+    const tempId = 'img_' + now() + '_' + Math.random().toString(36).slice(2,6);
+    const optimisticMsg = { image: URL.createObjectURL(blob), from: CLIENT_ID, tempId, timestamp: now() };
+    const el = createMessageElement(optimisticMsg);
+    el.classList.add('sending');
+  
+    if (activeDM) { dmChatList.appendChild(el); scrollToBottom(dmChatList.parentElement); }
+    else { publicChatList.appendChild(el); scrollToBottom(publicChatList.parentElement); }
+    pending.set(tempId, { el });
+
+    try {
+      const r = await fetch('/media/upload', { method: 'POST', body: fd });
+      if (!r.ok) throw new Error('upload failed');
+      const { url, key } = await r.json();
+  
+      // send only the small JSON over WS (media metadata)
+      const media = { kind: 'image', key, url, scope: activeDM ? 'dm' : 'public' };
+      if (activeDM) {
+        ws.send(JSON.stringify({ type: 'dm', to: activeDM, media, tempId }));
+      } else {
+        ws.send(JSON.stringify({ type: 'public', media, tempId }));
+      }
+
+      // optional: revoke optimistic blob URL after a short while to free memory
+      setTimeout(() => URL.revokeObjectURL(optimisticMsg.image), 10_000);
+    } catch (err) {
+      console.error('upload error', err);
+      // show error on optimistic element
+      const p = pending.get(tempId);
+      if (p) p.el.classList.add('error');
+      pending.delete(tempId);
+    }
   }
+  
 
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
@@ -276,6 +377,10 @@
         list.push(msg);
         cachedDMs.set(key, list);
 
+        // Update in-memory threads set so panel shows active DMs
+        dmThreads.add(partner);
+        renderDMPanel();
+
         if (msg.echoed && msg.tempId && pending.has(msg.tempId)) {
           const pendingMsg = pending.get(msg.tempId);
           pendingMsg.el.classList.remove('sending');
@@ -306,4 +411,7 @@
       else if (activeDM) showView('public');
     }
   });
+
+  // expose showView for debugging in console
+  window.__anno_showView = showView;
 })();
