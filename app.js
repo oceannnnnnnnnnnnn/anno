@@ -2,6 +2,26 @@
 // Loads env from anno.env by default (dev). In production use real env vars.
 require('dotenv').config();
 
+// --- IP Blocking Middleware ---
+const blockedIps = process.env.BLOCKED_IPS ? process.env.BLOCKED_IPS.split(',') : [];
+
+function ipBlock(req, res, next) {
+  const clientIp =
+    req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+    req.socket.remoteAddress;
+
+  console.log(`[IP LOG] Request from: ${clientIp}`);
+
+  if (blockedIps.includes(clientIp)) {
+    console.log(`[IP BLOCKED] ${clientIp}`);
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  next();
+}
+
+
+
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -10,6 +30,8 @@ const { createClient } = require('@supabase/supabase-js');
 
 const uploadRouter = require('./routes/upload'); // your upload & signed-url endpoints
 const app = express();
+app.use(ipBlock);
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, perMessageDeflate: {} });
 
@@ -128,40 +150,48 @@ function broadcast(dataObj) {
 }
 
 // --- WebSocket connection handling (restores full DM functionality) ---
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  // Extract client IP from headers or socket
+  const clientIp =
+    req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+    req.socket.remoteAddress;
+
+  ws._clientIp = clientIp; // Store IP on WebSocket object
+
   let myClientId = null;
+
+  console.log(`[SOCKET CONNECT] IP: ${clientIp}`);
 
   ws.on('message', async (raw) => {
     let msg;
     try {
       msg = JSON.parse(raw);
     } catch (e) {
-      // ignore non-json
-      return;
+      return; // ignore non-JSON
     }
 
-    // --- handshake: client must send hello with clientId (or we'll assign one) ---
+    // --- handshake: client must send hello with clientId ---
     if (msg.type === 'hello') {
       myClientId = String(msg.clientId || ('s_' + Math.random().toString(36).slice(2, 9)));
       sockets.set(myClientId, ws);
       ws._clientId = myClientId;
 
-      // ensure memory set exists
+      console.log(`[HELLO] ClientId: ${myClientId}, IP: ${ws._clientIp}`);
+
       if (!dmThreadsMemory.has(myClientId)) dmThreadsMemory.set(myClientId, new Set());
 
-      // reply hello ack and threads + recent public history
       sendTo(myClientId, { type: 'hello-ack', clientId: myClientId });
       sendTo(myClientId, { type: 'dm-threads', partners: Array.from(dmThreadsMemory.get(myClientId) || []) });
 
-      // async: load threads from supabase (if any) and send to client
+      // Load DM threads & public history as before...
       (async () => {
         try {
-          const { data: threads, error } = await supabase
+          const { data: threads } = await supabase
             .from('dm_threads')
             .select('dm_key, user_a, user_b')
             .or(`user_a.eq.${myClientId},user_b.eq.${myClientId}`);
 
-          if (!error && Array.isArray(threads)) {
+          if (Array.isArray(threads)) {
             const partners = [];
             threads.forEach(t => {
               const partner = (t.user_a === myClientId) ? t.user_b : t.user_a;
@@ -177,17 +207,16 @@ wss.on('connection', (ws) => {
         }
       })();
 
-      // async: load recent public history from DB and send
       (async () => {
         try {
-          const { data: pubRows, error } = await supabase
+          const { data: pubRows } = await supabase
             .from('messages')
             .select('from_id, text, media_key, media_url, media_kind, created_at')
             .eq('kind', 'public')
             .order('created_at', { ascending: false })
             .limit(100);
 
-          if (!error && Array.isArray(pubRows)) {
+          if (Array.isArray(pubRows)) {
             const publicMsgs = (pubRows || []).reverse().map(r => ({
               type: 'public',
               clientId: r.from_id,
@@ -197,7 +226,6 @@ wss.on('connection', (ws) => {
             }));
             sendTo(myClientId, { type: 'public-history', messages: publicMsgs });
           } else {
-            // fallback to in-memory
             const recentHistory = chatHistory.filter(item => now() - item.timestamp <= MESSAGE_LIFETIME);
             sendTo(myClientId, { type: 'public-history', messages: recentHistory });
           }
@@ -209,13 +237,13 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // require handshake before other messages
     if (!myClientId) return;
 
-    // annotate timestamp
     msg.timestamp = now();
 
-    // --- message routing ---
+    // ✅ LOG EVERY MESSAGE WITH USERNAME + IP
+    console.log(`[MESSAGE] ClientId: ${myClientId}, IP: ${ws._clientIp}, Type: ${msg.type}, Text: ${msg.text || '[media]'}`);
+
     switch (msg.type) {
       case 'public': {
         const obj = {
@@ -227,14 +255,11 @@ wss.on('connection', (ws) => {
           timestamp: msg.timestamp
         };
 
-        // store in in-memory history (quick reconnect)
         chatHistory.push(obj);
         if (chatHistory.length > 500) chatHistory.shift();
 
-        // broadcast to all connected clients
         broadcast(obj);
 
-        // persist to Supabase (fire-and-forget)
         insertPublicMessage({ fromId: myClientId, text: msg.text, media: msg.media }).catch(console.error);
         break;
       }
@@ -256,13 +281,11 @@ wss.on('connection', (ws) => {
           timestamp: msg.timestamp
         };
 
-        // in-memory DM cache
         const list = dmHistory.get(key) || [];
         list.push(record);
         if (list.length > 500) list.shift();
         dmHistory.set(key, list);
 
-        // ensure DM thread is reflected in memory for both users and notify them of thread list
         const setA = dmThreadsMemory.get(myClientId) || new Set();
         if (!setA.has(to)) {
           setA.add(to);
@@ -276,28 +299,24 @@ wss.on('connection', (ws) => {
           sendTo(to, { type: 'dm-threads', partners: Array.from(setB) });
         }
 
-        // send to recipient if connected
         sendTo(to, record);
-        // echo to sender with echoed flag so client can finalize optimistic UI
         sendTo(myClientId, { ...record, echoed: true });
 
-        // ensure DM thread exists in DB and persist DM message (fire-and-forget)
         ensureDMThreadExists(key, myClientId, to).catch(console.error);
         insertDMMessage({ dmKeyVal: key, fromId: myClientId, toId: to, text: msg.text, media: msg.media }).catch(console.error);
         break;
       }
-
-      // ignore unknown types
     }
   });
 
   ws.on('close', () => {
     if (myClientId) {
       sockets.delete(myClientId);
-      console.log('Client disconnected:', myClientId);
+      console.log(`[SOCKET DISCONNECT] ClientId: ${myClientId}, IP: ${ws._clientIp}`);
     }
   });
 });
+
 
 // start server
 const PORT = process.env.PORT || 3000;

@@ -33,6 +33,13 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const scope = req.body.scope || 'public';
     const dmKey = req.body.dmKey;
 
+    const clientIp =
+  req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+  req.socket.remoteAddress;
+
+console.log(`[UPLOAD] IP: ${clientIp}, Username: ${req.body.username || 'Unknown'}, File: ${req.file.originalname}`);
+
+
     if (!file) return res.status(400).json({ error: 'No file uploaded' });
 
     // ✅ Sanitize filename
