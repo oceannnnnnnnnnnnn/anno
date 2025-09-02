@@ -1,4 +1,4 @@
-<!doctype html>
+<!-- <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="styles.css">
   <link href="https://fonts.googleapis.com/css2?family=DynaPuff&display=swap" rel="stylesheet">
 
-  <!-- Open Graph -->
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://www.rando-roulette.com/" />
 <meta property="og:title" content="Rando Roulette" />
@@ -30,6 +29,94 @@
         <div class="topbar-center">
           <div class="title">Rando Roulette</div>
           <div class="subtitle">Anonymous encrypted chat</div>
+        </div>
+        <div class="topbar-right">
+          <button class="icon-btn dm-open-btn" aria-label="DMs" title="Direct messages">💬</button>
+        </div>
+      </header>
+      <main class="chat-container" role="main">
+        <ul id="public-chat-list" role="log" aria-live="polite"></ul>
+      </main>
+      <form id="public-composer" class="composer-form" autocomplete="off" aria-label="Message composer">
+        <button type="button" class="icon-btn attach" aria-label="Attach" title="Attach">📎</button>
+        <textarea class="msg-input" maxlength="500" placeholder="Type a message"></textarea>
+        <button class="send-btn" type="submit" disabled aria-label="Send message">Send</button>
+      </form>
+    </div>
+
+    <div id="dm-chat-page" class="chat-page">
+      <header class="topbar" role="banner">
+        <div class="topbar-left">
+          <button id="dm-back-btn" class="icon-btn" aria-label="Back to public chat" title="Back">⬅️</button>
+        </div>
+        <div class="topbar-center">
+          <div id="dm-chat-title" class="title">Direct Message</div>
+          <div id="dm-chat-subtitle" class="subtitle"></div>
+        </div>
+        <div class="topbar-right"></div>
+      </header>
+      <main class="chat-container" role="main">
+        <ul id="dm-chat-list" role="log" aria-live="polite"></ul>
+      </main>
+      <form id="dm-composer" class="composer-form" autocomplete="off" aria-label="DM composer">
+        <button type="button" class="icon-btn attach" aria-label="Attach" title="Attach">📎</button>
+        <textarea class="msg-input" maxlength="500" placeholder="Send a private message"></textarea>
+        <button class="send-btn" type="submit" disabled aria-label="Send message">Send</button>
+      </form>
+    </div>
+    
+    <input type="file" id="fileInput" accept="image/*" style="display:none" />
+
+    <div id="dm-panel" class="dm-panel" aria-hidden="true">
+      <div class="dm-panel-header">
+        <strong>Direct Messages</strong>
+        <button id="dm-close" class="icon-btn" aria-label="Close DMs">✕</button>
+      </div>
+      <div class="dm-panel-section">
+        <h4>My Threads</h4>
+        <div id="dm-threads" class="dm-threads"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="client.js"></script>
+</body>
+</html> -->
+
+
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Anno Chat</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=DynaPuff&display=swap" rel="stylesheet">
+
+  <!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://www.rando-roulette.com/" />
+<meta property="og:title" content="Rando Roulette" />
+<meta property="og:description" content="Anonymous chat room for meeting new people" />
+<meta property="og:image" content="https://www.rando-roulette.com/images/snapchat.jpeg" />
+
+
+  <meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Rando Roulette" />
+<meta name="twitter:description" content="Anonymous chat room for meeting new people" />
+<meta name="twitter:image" content="https://www.rando-roulette.com/images/snapchat.jpeg" />
+
+</head>
+<body>
+  <div id="app" data-view="public">
+
+    <div id="public-chat-page" class="chat-page">
+      <header class="topbar" role="banner">
+        <div class="topbar-left"></div>
+        <div class="topbar-center">
+          <div class="title">Dumbass</div>
+          <div class="subtitle">Got ur ass</div>
         </div>
         <div class="topbar-right">
           <button class="icon-btn dm-open-btn" aria-label="DMs" title="Direct messages">💬</button>
