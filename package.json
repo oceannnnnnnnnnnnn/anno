@@ -18,8 +18,6 @@
   },
   "homepage": "https://github.com/oceannnnnnnnnnnnn/anno#readme",
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.879.0",
-    "@aws-sdk/s3-request-presigner": "^3.879.0",
     "@supabase/supabase-js": "^2.56.1",
     "aws-sdk": "^2.1692.0",
     "dotenv": "^17.2.1",
