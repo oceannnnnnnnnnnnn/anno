@@ -156,3 +156,15 @@ html, body {
   .topbar .subtitle { font-size: 14px; }
   .message { font-size: 16px; }
 }
+
+
+
+
+.side-ad {
+  position: fixed;
+  top: 100px;        /* push it down below your header */
+  right: 0;          /* stick to the right side */
+  width: 160px;      /* match ad width */
+  height: 600px;     /* match ad height */
+  z-index: 9999;     /* keep it above other elements */
+}
