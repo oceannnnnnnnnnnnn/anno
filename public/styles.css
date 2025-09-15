@@ -159,8 +159,6 @@ html, body {
 
 
 
-
-
 /* Desktop skyscraper */
 .desktop-ad {
   position: fixed;
@@ -184,36 +182,26 @@ html, body {
 
   .mobile-ad {
     display: block;
-    position: fixed;
-    bottom: 0;
+    position: sticky;  /* stick to top while scrolling */
+    top: 0;
     left: 0;
     right: 0;
     text-align: center;
     background: #fff; /* optional: cleaner look */
     padding: 5px 0;
-    z-index: 999;
-    border-top: 1px solid #ddd; /* subtle separation */
+    z-index: 1000; /* slightly higher than desktop */
+    border-bottom: 1px solid #ddd; /* subtle separation line */
   }
 
   .mobile-ad ins {
     display: inline-block !important;
-    width: 300px !important;
+    width: 320px !important;
     height: 50px !important;
+    max-width: 100%; /* scale nicely */
   }
 
-  /* Push chat content above ad */
+  /* Push chat content down a little so it's not hidden */
   .chat-container {
-    padding-bottom: 70px; /* space for ad */
+    padding-top: 70px; /* space for top ad */
   }
-
-  /* Push composer above ad */
-  .composer-form {
-    margin-bottom: 60px; /* space for ad */
-  }
-}
-
-.ad-desktop {
-  float: right; /* keeps it to the side */
-  margin-left: 10px; /* pushes content away */
-  max-width: 160px;
 }
