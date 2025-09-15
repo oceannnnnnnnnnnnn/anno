@@ -157,9 +157,8 @@ html, body {
   .message { font-size: 16px; }
 }
 
-
-/* Default: desktop */
-.side-ad {
+/* Desktop skyscraper */
+.desktop-ad {
   position: fixed;
   right: 10px;
   top: 80px;
@@ -168,9 +167,32 @@ html, body {
   z-index: 999;
 }
 
-/* On mobile, just hide it */
+/* Mobile banner */
+.mobile-ad {
+  display: none; /* hidden by default */
+}
+
+/* Show mobile ad only on small screens */
 @media (max-width: 768px) {
-  .side-ad {
-    display: none;
+  .desktop-ad {
+    display: none; /* hide skyscraper */
+  }
+
+  .mobile-ad {
+    display: block;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    text-align: center;
+    background: #fff; /* optional, makes it look cleaner */
+    padding: 5px 0;
+    z-index: 999;
+  }
+
+  .mobile-ad ins {
+    display: inline-block !important;
+    width: 300px !important;
+    height: 50px !important;
   }
 }
