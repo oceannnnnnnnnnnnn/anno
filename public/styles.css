@@ -158,7 +158,6 @@ html, body {
 }
 
 
-
 /* Default: desktop */
 .side-ad {
   position: fixed;
@@ -169,19 +168,9 @@ html, body {
   z-index: 999;
 }
 
-/* On mobile, shrink or move it */
+/* On mobile, just hide it */
 @media (max-width: 768px) {
   .side-ad {
-    position: static;       /* don’t overlay the chat */
-    margin: 10px auto;      /* center it */
-    width: 300px;           /* typical mobile ad size */
-    height: 250px;
-  }
-
-  /* Force the ad script container to resize */
-  .side-ad ins {
-    display: block !important;
-    width: 300px !important;
-    height: 250px !important;
+    display: none;
   }
 }
