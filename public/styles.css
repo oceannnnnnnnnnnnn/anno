@@ -159,12 +159,29 @@ html, body {
 
 
 
-
+/* Default: desktop */
 .side-ad {
   position: fixed;
-  top: 100px;        /* push it down below your header */
-  right: 0;          /* stick to the right side */
-  width: 160px;      /* match ad width */
-  height: 600px;     /* match ad height */
-  z-index: 9999;     /* keep it above other elements */
+  right: 10px;
+  top: 80px;
+  width: 160px;
+  height: 600px;
+  z-index: 999;
+}
+
+/* On mobile, shrink or move it */
+@media (max-width: 768px) {
+  .side-ad {
+    position: static;       /* don’t overlay the chat */
+    margin: 10px auto;      /* center it */
+    width: 300px;           /* typical mobile ad size */
+    height: 250px;
+  }
+
+  /* Force the ad script container to resize */
+  .side-ad ins {
+    display: block !important;
+    width: 300px !important;
+    height: 250px !important;
+  }
 }
