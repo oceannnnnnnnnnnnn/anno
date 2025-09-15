@@ -157,6 +157,10 @@ html, body {
   .message { font-size: 16px; }
 }
 
+
+
+
+
 /* Desktop skyscraper */
 .desktop-ad {
   position: fixed;
@@ -185,14 +189,25 @@ html, body {
     left: 0;
     right: 0;
     text-align: center;
-    background: #fff; /* optional, makes it look cleaner */
+    background: #fff; /* optional: cleaner look */
     padding: 5px 0;
     z-index: 999;
+    border-top: 1px solid #ddd; /* subtle separation */
   }
 
   .mobile-ad ins {
     display: inline-block !important;
     width: 300px !important;
     height: 50px !important;
+  }
+
+  /* Push chat content above ad */
+  .chat-container {
+    padding-bottom: 70px; /* space for ad */
+  }
+
+  /* Push composer above ad */
+  .composer-form {
+    margin-bottom: 60px; /* space for ad */
   }
 }
