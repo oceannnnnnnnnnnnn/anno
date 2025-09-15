@@ -211,3 +211,9 @@ html, body {
     margin-bottom: 60px; /* space for ad */
   }
 }
+
+.ad-desktop {
+  float: right; /* keeps it to the side */
+  margin-left: 10px; /* pushes content away */
+  max-width: 160px;
+}
