@@ -187,52 +187,60 @@ html, body {
 }
 
 
-
-
-
-/* Desktop skyscraper */
-.desktop-ad {
-  position: fixed;
-  right: 10px;
-  top: 80px;
-  width: 160px;
-  height: 600px;
-  z-index: 999;
+/* ===== Desktop leaderboard ad ===== */
+.leaderboard-ad-container {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  width: 100%;
+  text-align: center;
+  background: #fff;
+  padding: 5px 0;
+  border-bottom: 1px solid #ddd;
 }
 
-/* Mobile banner */
+/* Force the leaderboard ad to size correctly */
+.leaderboard-ad-container ins {
+  display: inline-block !important;
+  width: 728px !important;
+  height: 90px !important;
+  max-width: 100%;
+}
+
+/* ===== Mobile top ad ===== */
 .mobile-ad {
-  display: none; /* hidden by default */
+  display: none; /* hidden by default, shown in mobile view below */
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  text-align: center;
+  background: #fff;
+  padding: 5px 0;
+  border-bottom: 1px solid #ddd;
 }
 
-/* Show mobile ad only on small screens */
-@media (max-width: 768px) {
-  .desktop-ad {
-    display: none; /* hide skyscraper */
-  }
+.mobile-ad ins {
+  display: inline-block !important;
+  width: 300px !important;
+  height: 50px !important;
+  max-width: 100%;
+}
 
+/* ===== Responsive behavior ===== */
+@media (max-width: 768px) {
+  .leaderboard-ad-container {
+    display: none;
+  }
   .mobile-ad {
     display: block;
-    position: sticky;  /* stick to top while scrolling */
-    top: 0;
-    left: 0;
-    right: 0;
-    text-align: center;
-    background: #fff; /* optional: cleaner look */
-    padding: 5px 0;
-    z-index: 1000; /* slightly higher than desktop */
-    border-bottom: 1px solid #ddd; /* subtle separation line */
   }
+}
 
-  .mobile-ad ins {
-    display: inline-block !important;
-    width: 320px !important;
-    height: 50px !important;
-    max-width: 100%; /* scale nicely */
+@media (min-width: 769px) {
+  .leaderboard-ad-container {
+    display: block;
   }
-
-  /* Push chat content down a little so it's not hidden */
-  .chat-container {
-    padding-top: 70px; /* space for top ad */
+  .mobile-ad {
+    display: none;
   }
 }
