@@ -62,10 +62,19 @@ html, body {
 
 /* --- Chat Area --- */
 .chat-container {
-  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain; padding: 14px 12px;
-  display: flex; flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+
+  /* New padding so messages aren’t hidden */
+  padding-bottom: 70px; /* height of composer */
+  padding-top: 150px;   /* 60px topbar + 90px leaderboard ad */
 }
+
 #public-chat-list, #dm-chat-list {
   list-style: none; margin: 0; padding: 0;
   display: flex; flex-direction: column; gap: 10px;
@@ -156,7 +165,11 @@ html, body {
   .topbar .subtitle { font-size: 14px; }
   .message { font-size: 16px; }
 }
-
+@media (max-width: 768px) {
+  .chat-container {
+    padding-top: 110px; /* 60px topbar + 50px mobile ad */
+  }
+}
 
 
 /* Admin button in topbar */
