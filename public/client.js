@@ -1,4 +1,4 @@
-// public/client.js (Full file — replace your current client.js with this)
+/* ---------- REPLACE public/client.js WITH THIS FILE ---------- */
 (function () {
   'use strict';
 
@@ -6,11 +6,11 @@
   const setVh = () => document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
   setVh();
   window.addEventListener('resize', setVh, { passive: true });
-  document.body.style.overflow = 'hidden';
+  // document.body.style.overflow = 'hidden';
 
   // --- WebSocket Connection ---
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${protocol}://${window.location.host}`);
+  const ws = new WebSocket(`${protocol}://${window.location.hostname}:${window.location.port || (protocol === 'wss' ? 443 : 80)}`);
 
   // --- DOM Handles ---
   const app = document.getElementById('app');
@@ -27,7 +27,160 @@
   const dmCloseBtn = document.getElementById('dm-close');
   const dmThreadsEl = document.getElementById('dm-threads');
 
-  // --- Universal Composer & Attachment Logic ---
+
+
+  // client.js
+// --- Add this after the DOM Handles section ---
+
+// const publicChatContainer = document.getElementById('public-chat-list').parentElement;
+// let isLoadingMore = false; // Prevents sending multiple requests at once
+// let hasLoadedAllHistory = false; // Stops trying to load more when we've reached the end
+
+// client.js (Corrected)
+// ---------- replace existing scroll listener with this ----------
+(function attachPublicScrollHandler() {
+  const list = publicChatList || document.getElementById('public-chat-list');
+  if (!list) { console.warn('public-chat-list not found'); return; }
+
+  // find the element that's actually scrollable
+  let scrollNode = list.closest('.chat-container') || list.parentElement || list;
+  let current = scrollNode;
+  while (current && current !== document.documentElement) {
+    const v = getComputedStyle(current).overflowY;
+    if (v === 'auto' || v === 'scroll') { scrollNode = current; break; }
+    current = current.parentElement;
+  }
+
+  console.log('Attaching public scroll handler to:', scrollNode);
+  let isLoadingMore = false;
+  let hasLoadedAllHistory = false;
+
+  // put these near your isLoadingMore/hasLoadedAllHistory state (inside the IIFE)
+let lastTriggeredAt = 0;
+const TRIGGER_DEBOUNCE_MS = 2000; // don't trigger more than once every 2s
+const TOP_THRESHOLD_PX = 80; // trigger when within 80px of the top (or bottom for reversed lists)
+
+// ---------- replace / add this function inside attachPublicScrollHandler() ----------
+function onPublicScroll() {
+  const nowTs = Date.now();
+  // raw debug values
+  console.log('public scroll (raw):',
+    'scrollTop=', scrollNode.scrollTop,
+    'clientHeight=', scrollNode.clientHeight,
+    'scrollHeight=', scrollNode.scrollHeight
+  );
+
+  const first = list.firstElementChild;
+  const listStyle = getComputedStyle(list);
+  const reversed = (listStyle.flexDirection === 'column-reverse') || list.classList.contains('reversed');
+
+  // compute distance (in px) from top-of-history
+  let reachedTop = false;
+  let distance = Infinity;
+
+  if (reversed) {
+    // For reversed lists the top-of-history is the bottom of the scroll area
+    const distanceFromBottom = (scrollNode.scrollHeight - (scrollNode.scrollTop + scrollNode.clientHeight));
+    distance = distanceFromBottom;
+    console.log('reversed list; distanceFromBottom=', distanceFromBottom);
+    reachedTop = distanceFromBottom <= TOP_THRESHOLD_PX;
+  } else {
+    // Normal list: top-of-history is scrollTop near 0
+    const distanceFromTop = scrollNode.scrollTop;
+    distance = distanceFromTop;
+    console.log('distanceFromTop=', distanceFromTop);
+
+    // fallback: if scrollTop isn't small due to padding, check first <li> position
+    if (first) {
+      const listRect = scrollNode.getBoundingClientRect();
+      const firstRect = first.getBoundingClientRect();
+      const firstDelta = firstRect.top - listRect.top;
+      console.log('first delta to container top:', firstDelta);
+      // if the first element is already visually at/near the top, treat that as reached
+      if (firstDelta <= 4) reachedTop = true; // small tolerance
+    }
+
+    // accept being "near" the top, not exactly zero
+    reachedTop = reachedTop || (distanceFromTop <= TOP_THRESHOLD_PX);
+  }
+
+  console.log('reachedTop=', reachedTop, 'reversed=', reversed, 'distance=', distance);
+
+  if (!reachedTop) return;
+
+  if (isLoadingMore) {
+    console.log('will not load: isLoadingMore flag set');
+    return;
+  }
+  if (hasLoadedAllHistory) {
+    console.log('will not load: hasLoadedAllHistory flag set');
+    return;
+  }
+
+  if (nowTs - lastTriggeredAt < TRIGGER_DEBOUNCE_MS) {
+    console.log('skipping load-more due to debounce (last at', new Date(lastTriggeredAt).toISOString(), ')');
+    return;
+  }
+
+  const oldestMessage = (publicMessages && publicMessages[0]) || null;
+if (!oldestMessage) {
+  console.log('no oldestMessage yet — will retry shortly');
+
+  // schedule another check in case history arrives later
+  setTimeout(onPublicScroll, 1000);
+
+  return;
+}
+
+  // mark last triggered time & set loading flag
+  lastTriggeredAt = nowTs;
+  isLoadingMore = true;
+
+  console.log('Triggering load-more before:', oldestMessage.timestamp, 'distance=', distance);
+
+  // show loader UI
+  const loader = document.createElement('li');
+  loader.className = 'loading-indicator';
+  loader.textContent = 'Loading history...';
+  list.prepend(loader);
+
+  // send your request (use ws variable that exists in the outer scope)
+  if (ws && ws.send) {
+    try {
+      ws.send(JSON.stringify({ type: 'request-more-history', before: oldestMessage.timestamp }));
+    } catch (err) {
+      console.error('failed to send request-more-history', err);
+      // ensure we clear isLoadingMore so future attempts can run
+      isLoadingMore = false;
+      loader.remove();
+    }
+  } else {
+    console.warn('ws not available; cannot request-more-history');
+    isLoadingMore = false;
+    loader.remove();
+  }
+}
+
+// after you attach the listener, run one initial quick check
+// (place this line right after: scrollNode.addEventListener('scroll', onPublicScroll, { passive: true }); )
+setTimeout(onPublicScroll, 150);
+
+  
+
+  scrollNode.addEventListener('scroll', onPublicScroll, { passive: true });
+})();
+
+
+
+
+  // FEED DOM handles
+  const feedPage = document.getElementById('feed-page');
+  const feedList = document.getElementById('feed-list');
+  const feedComposer = document.getElementById('feed-composer');
+  const navToggleBtn = document.getElementById('nav-toggle-btn');
+  const navToggleBtnFeed = document.getElementById('nav-toggle-btn-feed');
+
+  // --- Universal Composer & Attachment Logic (works for public, feed and dm since they all have .composer-form) ---
   document.querySelectorAll('.composer-form').forEach(form => {
     const input = form.querySelector('.msg-input');
     const sendBtn = form.querySelector('.send-btn');
@@ -54,7 +207,7 @@
   const dmThreads = new Set();
   const unreadCounts = new Map();
   let activeDM = null;
-
+  let lastNonDmView = 'public'; // remember whether user prefers "public" or "feed"
   let IS_ADMIN = sessionStorage.getItem('annoIsAdmin') === '1';
 
   function adminLoginPrompt() {
@@ -71,12 +224,10 @@
   };
 
   // --- Admin UI helpers (robust insertion + visual update) ---
-  // We'll expose setAdminVisual so ws message handler can update the UI directly.
   function createAdminButtonIfMissing() {
     const topbarRight = document.querySelector('.topbar-right');
     if (!topbarRight) return null;
 
-    // If button already exists, return it
     if (window.__anno_adminBtn && document.body.contains(window.__anno_adminBtn)) {
       return window.__anno_adminBtn;
     }
@@ -90,10 +241,7 @@
 
     adminBtn.addEventListener('click', () => { adminLoginPrompt(); });
 
-    // Insert after existing children so it appears to the right of DM button
     topbarRight.appendChild(adminBtn);
-
-    // store globally for easy access
     window.__anno_adminBtn = adminBtn;
     return adminBtn;
   }
@@ -110,12 +258,9 @@
       btn.classList.remove('admin-active');
       btn.title = 'Admin';
     }
-    // also dispatch event for any other handlers
     window.dispatchEvent(new CustomEvent('anno-admin-state', { detail: { isAdmin: IS_ADMIN } }));
   }
 
-  // Try to create the admin button now (works regardless of DOMContentLoaded timing).
-  // If topbar-right doesn't exist yet, we'll create it later when needed (createAdminButtonIfMissing is idempotent).
   try { createAdminButtonIfMissing(); } catch (e) { /* ignore */ }
 
   // --- Admin context menu (existing) ---
@@ -175,14 +320,13 @@
     return url;
   }
 
-  // --- DOM Rendering ---
+  // --- DOM Rendering for messages (unchanged from your implementation) ---
   function createMessageElement(msg) {
     const { text, image, media, clientId, from, tempId, timestamp } = msg;
     const li = document.createElement('li');
     if (msg.messageId) li.dataset.messageId = msg.messageId;
     if (msg.tempId) li.dataset.tempId = msg.tempId;
 
-    // If message is flagged deleted (server or local), render [message deleted] and return early
     if (msg.deleted || msg.deleted_at) {
       li.classList.add('deleted');
       const content = document.createElement('div');
@@ -293,11 +437,126 @@
     } else { dmThreadsEl.innerHTML = `<div class="dm-empty">No active DMs. Click a user's ID to start one.</div>`; }
   }
 
+  // --- FEED rendering ---
+  function createFeedElement(msg) {
+    const li = document.createElement('li');
+    li.className = 'feed-item';
+    if (msg.messageId) li.dataset.messageId = msg.messageId;
+    if (msg.tempId) li.dataset.tempId = msg.tempId;
+
+    const container = document.createElement('div');
+    container.className = 'feed-container';
+
+    // media
+    // --- inside createFeedElement(msg) where you handle image media ---
+if (msg.media && msg.media.kind === 'image') {
+  // create wrapper
+  const wrap = document.createElement('div');
+  wrap.className = 'feed-media-wrap';
+
+  const img = document.createElement('img');
+  img.className = 'feed-media';
+  img.alt = 'Feed image';
+  img.loading = 'lazy';     // lazy load for performance
+  img.decoding = 'async';   // async decode for smoother paint
+  // sizes hint (optional but helpful)
+  img.sizes = '(max-width:720px) 94vw, 720px';
+
+  // set src (either available immediately or via presigned resolver)
+  if (msg.media.url) {
+    img.src = msg.media.url;
+  } else if (msg.media.key) {
+    // resolve presigned and assign
+    resolvePresignedUrl(msg.media.key).then(url => { img.src = url; }).catch(() => { img.alt = 'Could not load image'; });
+  }
+
+  // primary click: open lightbox (instead of navigating away)
+  img.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    openLightboxForMsg(msg);
+  });
+
+  wrap.appendChild(img);
+  container.appendChild(wrap);
+} else if (msg.media && msg.media.kind === 'video') {
+      const v = document.createElement('video');
+      v.className = 'feed-media';
+      v.controls = true;
+      if (msg.media.url) v.src = msg.media.url;
+      else resolvePresignedUrl(msg.media.key).then(url => v.src = url).catch(() => { /* ignore */ });
+      container.appendChild(v);
+    } else {
+      // fallback: text preview
+      const p = document.createElement('div');
+      p.textContent = msg.text || '';
+      container.appendChild(p);
+    }
+
+    const meta = document.createElement('div');
+meta.className = 'feed-meta';
+
+// LEFT: clickable username (opens DM)
+const left = document.createElement('div');
+const partnerId = msg.clientId || msg.from || null;
+const usernameBtn = document.createElement('button');
+usernameBtn.className = 'feed-username icon-btn';
+usernameBtn.type = 'button';
+usernameBtn.textContent = partnerId ? `@${String(partnerId).slice(0,8)}` : '@anon';
+usernameBtn.setAttribute('aria-label', partnerId ? `Open DM with ${usernameBtn.textContent}` : 'No DM available');
+
+if (partnerId) {
+  // stopPropagation so clicking the username doesn't trigger the feed-item click
+  usernameBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    openDM(partnerId);
+  });
+} else {
+  usernameBtn.disabled = true;
+  usernameBtn.style.opacity = '0.6';
+}
+
+// append to left area
+left.appendChild(usernameBtn);
+
+// RIGHT: timestamp
+const right = document.createElement('div');
+right.textContent = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+meta.appendChild(left);
+meta.appendChild(right);
+
+container.appendChild(meta);
+li.appendChild(container);
+return li;
+
+  }
+
+  function renderFeed() {
+    if (!feedList) return;
+    feedList.innerHTML = '';
+    // show public messages that include media, newest first
+    const mediaMsgs = publicMessages.filter(m => m.media && (m.media.kind === 'image' || m.media.kind === 'video'));
+    mediaMsgs.forEach(m => feedList.appendChild(createFeedElement(m)));
+    // scroll behaviour: optional — do not force scroll to bottom for feed
+  }
+
+  function appendFeedItem(msg) {
+    if (!feedList) return;
+    if (!(msg.media && (msg.media.kind === 'image' || msg.media.kind === 'video'))) return;
+    // insert at top (newest first)
+    const el = createFeedElement(msg);
+    feedList.insertBefore(el, feedList.firstChild);
+  }
+
   // --- VIEW SWITCHING ---
   function showView(view, partnerId) {
     if (view === 'public') {
       app.setAttribute('data-view', 'public');
+      if (feedPage) feedPage.style.display = 'none';
+      document.getElementById('public-chat-page').style.display = 'flex';
+      document.getElementById('dm-chat-page').style.display = 'none';
       activeDM = null;
+      lastNonDmView = 'public';
       if (dmChatTitle) dmChatTitle.textContent = 'Direct Message';
       if (dmChatSubtitle) dmChatSubtitle.textContent = '';
       const inEl = publicComposer.querySelector('.msg-input');
@@ -307,6 +566,9 @@
       if (!partnerId) return;
       activeDM = String(partnerId);
       app.setAttribute('data-view', 'dm');
+      document.getElementById('public-chat-page').style.display = 'none';
+      if (feedPage) feedPage.style.display = 'none';
+      document.getElementById('dm-chat-page').style.display = 'flex';
       if (dmChatTitle) dmChatTitle.textContent = `Chat`;
       if (dmChatSubtitle) dmChatSubtitle.textContent = partnerId;
       renderDMConversation(partnerId);
@@ -314,6 +576,20 @@
       if (inEl) {
         inEl.value = '';
         dmComposer.querySelector('.send-btn').disabled = true;
+        inEl.focus();
+      }
+    } else if (view === 'feed') {
+      app.setAttribute('data-view', 'feed');
+      document.getElementById('public-chat-page').style.display = 'none';
+      document.getElementById('dm-chat-page').style.display = 'none';
+      if (feedPage) feedPage.style.display = 'flex';
+      activeDM = null;
+      lastNonDmView = 'feed';
+      renderFeed();
+      const inEl = feedComposer ? feedComposer.querySelector('.msg-input') : null;
+      if (inEl) {
+        inEl.value = '';
+        feedComposer.querySelector('.send-btn').disabled = true;
         inEl.focus();
       }
     }
@@ -327,7 +603,7 @@
   }
 
   function sendTextMessage() {
-    const composer = activeDM ? dmComposer : publicComposer;
+    const composer = activeDM ? dmComposer : (app.getAttribute('data-view') === 'feed' ? feedComposer : publicComposer);
     const input = composer.querySelector('.msg-input');
     const text = (input.value || '').trim();
     if (!text) return;
@@ -342,8 +618,10 @@
       scrollToBottom(dmChatList.parentElement);
       ws.send(JSON.stringify({ type: 'dm', to: activeDM, text, tempId }));
     } else {
+      // public
       publicChatList.appendChild(el);
       scrollToBottom(publicChatList.parentElement);
+      // if feed visible, also append text-only posts (optional). We only auto-add media to feed; keep text out for clarity.
       ws.send(JSON.stringify({ type: 'public', text, tempId }));
     }
 
@@ -352,7 +630,7 @@
     composer.querySelector('.send-btn').disabled = true;
   }
 
-  // --- Image upload + compression (unchanged) ---
+  // --- Image upload + compression (updated: also appends optimistic feed item when posting public media) ---
   async function sendImageWithCompression(file) {
     const MAX_WIDTH = 720;
     const bitmap = await createImageBitmap(file);
@@ -373,12 +651,17 @@
     if (activeDM) fd.append('dmKey', dmKey(CLIENT_ID, activeDM));
 
     const tempId = 'img_' + now() + '_' + Math.random().toString(36).slice(2,6);
-    const optimisticMsg = { image: URL.createObjectURL(blob), from: CLIENT_ID, tempId, timestamp: now() };
+    const optimisticMsg = { image: URL.createObjectURL(blob), from: CLIENT_ID, tempId, timestamp: now(), media: { kind: 'image' } };
     const el = createMessageElement(optimisticMsg);
     el.classList.add('sending');
 
-    if (activeDM) { dmChatList.appendChild(el); scrollToBottom(dmChatList.parentElement); }
-    else { publicChatList.appendChild(el); scrollToBottom(publicChatList.parentElement); }
+    if (activeDM) {
+      dmChatList.appendChild(el); scrollToBottom(dmChatList.parentElement);
+    } else {
+      publicChatList.appendChild(el); scrollToBottom(publicChatList.parentElement);
+      // also append to feed immediately (optimistic)
+      appendFeedItem(optimisticMsg);
+    }
     pending.set(tempId, { el });
 
     try {
@@ -416,7 +699,6 @@
 
     if (msg.type === 'admin-ack') {
       if (msg.ok) {
-        // mark admin in memory AND update UI (no race)
         setAdminVisual(true);
         alert('Admin mode enabled');
       } else {
@@ -425,10 +707,54 @@
       return;
     }
 
+//     // inside your server's ws.on('message', async (msgRaw) => { ... })
+// if (msg.type === 'request-more-history') {
+//   try {
+//     const beforeTimestamp = new Date(msg.before).toISOString();
+
+//     // Query Supabase on the server with your service key
+//     const { data: olderRows, error } = await supabase
+//       .from('messages')
+//       .select('id, from_id, text, media_key, media_url, media_kind, created_at')
+//       .eq('kind', 'public')
+//       .is('deleted_at', null)
+//       .lt('created_at', beforeTimestamp)
+//       .order('created_at', { ascending: false })
+//       .limit(50);
+
+//     if (error) throw error;
+
+//     const olderMsgs = (olderRows || []).reverse().map(r => ({
+//       type: 'public',
+//       messageId: r.id,
+//       clientId: r.from_id,
+//       text: r.text,
+//       media: r.media_key
+//         ? { kind: r.media_kind, key: r.media_key, url: r.media_url, scope: 'public' }
+//         : null,
+//       timestamp: new Date(r.created_at).getTime()
+//     }));
+
+//     // Send the batch back to the client that requested it
+//     ws.send(JSON.stringify({
+//       type: 'more-public-history',
+//       messages: olderMsgs
+//     }));
+
+//   } catch (e) {
+//     console.error('Failed to fetch older history:', e);
+//     ws.send(JSON.stringify({
+//       type: 'more-public-history',
+//       messages: []
+//     }));
+//   }
+//   return; // Stop processing after handling this message type
+// }
+
+
     if (msg.type === 'delete-message') {
       const id = Number(msg.messageId);
 
-      // Update DOM if element exists
       const el = document.querySelector(`[data-message-id="${id}"]`);
       if (el) {
         el.classList.add('deleted');
@@ -436,7 +762,6 @@
         if (content) content.textContent = '[message deleted]';
       }
 
-      // Update in-memory public cache so re-render keeps deletion
       for (let i = 0; i < publicMessages.length; i++) {
         if (Number(publicMessages[i].messageId) === id) {
           publicMessages[i].deleted = true;
@@ -445,7 +770,6 @@
         }
       }
 
-      // Update DM caches (if deletion was a DM)
       for (const [k, arr] of cachedDMs.entries()) {
         for (let i = 0; i < arr.length; i++) {
           if (Number(arr[i].messageId) === id) {
@@ -456,7 +780,6 @@
         }
       }
 
-      // Update pending optimistic items (if any)
       for (const [tempId, p] of pending.entries()) {
         if (p.el && p.el.dataset && Number(p.el.dataset.messageId) === id) {
           p.el.classList.add('deleted');
@@ -467,7 +790,6 @@
 
       return;
     }
-
 
     if (msg.type === 'admin-announce') {
       console.info('ADMIN ANNOUNCE:', msg.text);
@@ -484,7 +806,9 @@
 
       case 'public-history':
         publicMessages.push(...msg.messages);
+        // render both chat and feed (feed shows media items)
         if (!activeDM) renderPublicChat();
+        renderFeed();
         break;
 
       case 'dm-threads':
@@ -492,6 +816,48 @@
         (msg.partners || []).forEach(p => dmThreads.add(p));
         renderDMPanel();
         break;
+
+      case 'more-public-history': {
+        // Remove the loading indicator
+        const loader = publicChatList.querySelector('.loading-indicator');
+        if (loader) loader.remove();
+
+        if (msg.messages.length === 0) {
+          console.log('No more history to load.');
+          hasLoadedAllHistory = true;
+          isLoadingMore = false;
+          return;
+        }
+
+       // Use the same scrollNode we attached the listener to
+const container = publicChatList.closest('.chat-container') || publicChatList.parentElement;
+if (!container) {
+  console.warn('No container found for scroll restore');
+  return;
+}
+
+const oldScrollHeight = container.scrollHeight;
+
+msg.messages.forEach(m => {
+  publicMessages.unshift(m);
+  const el = createMessageElement(m);
+  publicChatList.prepend(el);
+});
+
+const newScrollHeight = container.scrollHeight;
+container.scrollTop = newScrollHeight - oldScrollHeight;
+
+console.log('[history restore]', {
+  oldScrollHeight,
+  newScrollHeight,
+  finalScrollTop: container.scrollTop
+});
+
+
+        isLoadingMore = false;
+        break;
+      }
+
 
       case 'public': {
         if (msg.clientId === CLIENT_ID && msg.tempId && pending.has(msg.tempId)) {
@@ -501,12 +867,18 @@
           if (meta) meta.textContent = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           pending.delete(msg.tempId);
           publicMessages.push(msg);
+          // also add to feed if media present
+          appendFeedItem(msg);
           return;
         }
         publicMessages.push(msg);
         if (!activeDM) {
           publicChatList.appendChild(createMessageElement(msg));
           scrollToBottom(publicChatList.parentElement);
+        }
+        // if the public message has media, append it to the feed (keeps feed and public synced)
+        if (msg.media && (msg.media.kind === 'image' || msg.media.kind === 'video')) {
+          appendFeedItem(msg);
         }
         break;
       }
@@ -542,22 +914,87 @@
   // --- UI Event Listeners ---
   if (dmOpenBtn) dmOpenBtn.addEventListener('click', () => { dmPanel.classList.add('open'); renderDMPanel(); });
   if (dmCloseBtn) dmCloseBtn.addEventListener('click', () => dmPanel.classList.remove('open'));
-  if (dmBackButton) dmBackButton.addEventListener('click', () => showView('public'));
+
+  // DM back button should go to whichever view user last used (feed or public)
+  if (dmBackButton) dmBackButton.addEventListener('click', () => showView(lastNonDmView || 'public'));
+
+  // nav toggle: public -> feed, feed -> public
+  if (navToggleBtn) navToggleBtn.addEventListener('click', () => {
+    const current = app.getAttribute('data-view') || 'public';
+    if (current === 'feed') showView('public');
+    else showView('feed');
+  });
+  if (navToggleBtnFeed) navToggleBtnFeed.addEventListener('click', () => {
+    const current = app.getAttribute('data-view') || 'feed';
+    if (current === 'feed') showView('public');
+    else showView('feed');
+  });
+
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       if (dmPanel.classList.contains('open')) dmPanel.classList.remove('open');
-      else if (activeDM) showView('public');
+      else if (activeDM) showView(lastNonDmView || 'public');
     }
   });
 
-  // Expose some debug helpers
+  // --- Lightbox helpers (simple, self-contained) ---
+function ensureLightboxExists() {
+  let lb = document.getElementById('lightbox');
+  if (lb) return lb;
+
+  lb = document.createElement('div');
+  lb.id = 'lightbox';
+  lb.className = 'lightbox';
+  lb.innerHTML = `
+    <button class="close-btn" aria-label="Close">✕</button>
+    <img alt="Full-size image" />
+  `;
+  document.body.appendChild(lb);
+  lb.querySelector('.close-btn').addEventListener('click', closeLightbox);
+  lb.addEventListener('click', (e) => { if (e.target === lb) closeLightbox(); });
+  return lb;
+}
+
+function openLightboxForMsg(msg) {
+  const lb = ensureLightboxExists();
+  const imgEl = lb.querySelector('img');
+
+  // If we have a direct URL, use it; otherwise resolve the presigned URL
+  if (msg.media && msg.media.url) {
+    imgEl.src = msg.media.url;
+    lb.classList.add('open');
+  } else if (msg.media && msg.media.key) {
+    resolvePresignedUrl(msg.media.key).then(url => {
+      imgEl.src = url;
+      lb.classList.add('open');
+    }).catch(() => {
+      // fallback: show an error image or message
+      imgEl.alt = 'Could not load image';
+      lb.classList.add('open');
+    });
+  } else if (msg.image) {
+    // optimistic objectURL (upload preview)
+    imgEl.src = msg.image;
+    lb.classList.add('open');
+  }
+}
+
+function closeLightbox() {
+  const lb = document.getElementById('lightbox');
+  if (!lb) return;
+  const imgEl = lb.querySelector('img');
+  imgEl.removeAttribute('src');
+  lb.classList.remove('open');
+}
+
+
+  // Expose debug helpers
   window.__anno_showView = showView;
   window.__anno_setAdminVisual = setAdminVisual;
   window.__anno_createAdminBtn = createAdminButtonIfMissing;
 
   // ensure admin button exists (retry if necessary when DOM not ready)
   if (!window.__anno_adminBtn) {
-    // Attempt again once DOMContentLoaded if not present now
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => createAdminButtonIfMissing());
     } else {
@@ -565,3 +1002,35 @@
     }
   }
 })();
+
+// --- Dynamic layout helper for ads/topbar/composer (unchanged) ---
+(function () {
+  function measureAndApply() {
+    try {
+      const adEl = document.querySelector('.leaderboard-ad-container, .mobile-ad');
+      const topbarEl = document.querySelector('.topbar');
+      const composerEl = document.querySelector('.composer-form');
+
+      const adH = adEl ? adEl.getBoundingClientRect().height : 0;
+      const topbarH = topbarEl ? topbarEl.getBoundingClientRect().height : 0;
+      const composerH = composerEl ? composerEl.getBoundingClientRect().height : 0;
+
+      document.documentElement.style.setProperty('--ad-height', adH + 'px');
+      document.documentElement.style.setProperty('--topbar-height', topbarH + 'px');
+      document.documentElement.style.setProperty('--composer-height', composerH + 'px');
+
+      if (topbarEl) {
+        topbarEl.style.top = adH + 'px';
+      }
+    } catch (err) {
+      console.error('[layout helper] failed:', err);
+    }
+  }
+
+  window.addEventListener('DOMContentLoaded', measureAndApply);
+  window.addEventListener('resize', measureAndApply);
+  window.addEventListener('load', measureAndApply);
+  setInterval(measureAndApply, 2000);
+})();
+
+

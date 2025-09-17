@@ -38,6 +38,8 @@ const wss = new WebSocket.Server({ server, perMessageDeflate: {} });
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/favicon.ico', express.static(path.join(__dirname, 'public/images/favicon.ico')));
+
 
 // ---------- Supabase client ----------
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -447,6 +449,52 @@ wss.on('connection', (ws, req) => {
       ws.send(JSON.stringify({ type: 'admin-ok', action: 'announce' }));
       return;
     }
+
+
+    // ---------- LOAD OLDER PUBLIC HISTORY ----------
+if (msg.type === 'request-more-history') {
+  try {
+    const beforeTimestamp = new Date(msg.before).toISOString();
+
+    const { data: olderRows, error } = await supabase
+      .from('messages')
+      .select('id, from_id, text, media_key, media_url, media_kind, created_at')
+      .eq('kind', 'public')
+      .is('deleted_at', null)
+      .lt('created_at', beforeTimestamp)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+
+    const olderMsgs = (olderRows || []).reverse().map(r => ({
+      type: 'public',
+      messageId: r.id,
+      clientId: r.from_id,
+      text: r.text,
+      media: r.media_key
+        ? { kind: r.media_kind, key: r.media_key, url: r.media_url, scope: 'public' }
+        : null,
+      timestamp: new Date(r.created_at).getTime()
+    }));
+
+    // send directly back to the requesting socket
+    ws.send(JSON.stringify({
+      type: 'more-public-history',
+      messages: olderMsgs
+    }));
+
+  } catch (e) {
+    console.error('Failed to fetch older history:', e);
+    ws.send(JSON.stringify({
+      type: 'more-public-history',
+      messages: []
+    }));
+  }
+  return; // stop further processing
+}
+
+
 
     // ---------- Regular public / DM message handling ----------
     if (msg.type === 'public') {

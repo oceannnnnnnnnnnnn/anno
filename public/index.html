@@ -22,31 +22,14 @@
 
 </head>
 <body>
-  <script type="text/javascript" data-cfasync="false" async src="https://poweredby.jads.co/js/jads.js"></script>
-  <!-- Desktop Ad (skyscraper) -->
-<div class="leaderboard-ad-container">
- <!-- JuicyAds v3.0 -->
-<ins id="1101398" data-width="728" data-height="90"></ins>
-<script type="text/javascript" data-cfasync="false" async>(adsbyjuicy = window.adsbyjuicy || []).push({'adzone':1101398});</script>
-<!--JuicyAds END-->
-</div>
-
-<!-- Mobile Ad (banner) -->
-<div class="mobile-ad">
-  <!-- JuicyAds v3.0 -->
-  <ins id="1101379" data-width="300" data-height="50"></ins>
-  <script type="text/javascript" data-cfasync="false" async>
-    (adsbyjuicy = window.adsbyjuicy || []).push({'adzone':1101379});
-  </script>
-  <!-- JuicyAds END -->
-</div>
-
 
   <div id="app" data-view="public">
 
     <div id="public-chat-page" class="chat-page">
       <header class="topbar" role="banner">
-        <div class="topbar-left"></div>
+        <div class="topbar-left">
+          <button id="nav-toggle-btn" class="icon-btn" aria-label="Open Feed" title="Feed">📷</button>
+        </div>
         <div class="topbar-center">
           <div class="title">Rando Roulette</div>
           <div class="subtitle">Anonymous encrypted chat</div>
@@ -85,6 +68,36 @@
         <button class="send-btn" type="submit" disabled aria-label="Send message">Send</button>
       </form>
     </div>
+
+
+        <!-- FEED PAGE -->
+        <div id="feed-page" class="feed-page chat-page" style="display:none;">
+          <header class="topbar" role="banner">
+            <div class="topbar-left">
+              <!-- toggle button: returns to chat when in feed -->
+              <button id="nav-toggle-btn-feed" class="icon-btn" aria-label="Back to Chat" title="Chat">💬</button>
+            </div>
+            <div class="topbar-center">
+              <div class="title">Rando Feed</div>
+              <div class="subtitle">Latest shared images & videos</div>
+            </div>
+            <div class="topbar-right">
+              <!-- <button class="icon-btn dm-open-btn" aria-label="DMs" title="Direct messages">💬</button> -->
+            </div>
+          </header>
+    
+          <main id="feed-main" class="chat-container" role="main">
+            <ul id="feed-list" role="list" aria-live="polite"></ul>
+          </main>
+    
+          <!-- Feed composer: reuses same .composer-form logic -->
+          <form id="feed-composer" class="composer-form" autocomplete="off" aria-label="Feed composer">
+            <button type="button" class="icon-btn attach" aria-label="Attach" title="Attach">📎</button>
+            <textarea class="msg-input" maxlength="500" placeholder="Post to the public feed"></textarea>
+            <button class="send-btn" type="submit" disabled aria-label="Post to feed">Post</button>
+          </form>
+        </div>
+    
     
     <input type="file" id="fileInput" accept="image/*" style="display:none" />
 
@@ -101,91 +114,48 @@
   </div>
 
   <script src="client.js"></script>
+
+  <script>
+    (function () {
+      function setAdHeight() {
+        const desktop = document.querySelector('.leaderboard-ad-container');
+        const mobile = document.querySelector('.mobile-ad');
+        // pick the one that’s actually displayed
+        const active = (mobile && getComputedStyle(mobile).display !== 'none') ? mobile : desktop;
+        if (!active) return;
+    
+        // measure height but only apply if > 0
+        const h = Math.ceil(active.getBoundingClientRect().height || 0);
+        if (h > 0) {
+          document.documentElement.style.setProperty('--ad-height', h + 'px');
+          document.documentElement.style.setProperty('--mobile-ad-height', h + 'px');
+        }
+        // never overwrite with 0 — keeps fallback
+      }
+    
+      function setTopbarHeight() {
+        const tb = document.querySelector('.topbar');
+        if (!tb) return;
+        const th = Math.ceil(tb.getBoundingClientRect().height || 0);
+        if (th > 0) {
+          document.documentElement.style.setProperty('--topbar-height', th + 'px');
+        }
+      }
+    
+      function measureAll() {
+        setAdHeight();
+        setTopbarHeight();
+      }
+    
+      window.addEventListener('load', measureAll);
+      window.addEventListener('resize', measureAll);
+      // remeasure after ads load
+      setTimeout(measureAll, 500);
+      setTimeout(measureAll, 1500);
+    })();
+    </script>
+    
+
+
 </body>
 </html>
-
-<!-- 
-
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Anno Chat</title>
-  <link rel="stylesheet" href="styles.css">
-  <link href="https://fonts.googleapis.com/css2?family=DynaPuff&display=swap" rel="stylesheet">
-<meta property="og:type" content="website" />
-<meta property="og:url" content="https://www.rando-roulette.com/" />
-<meta property="og:title" content="Aylah's Profile" />
-<meta property="og:description" content="Anonymous chat room for meeting new people" />
-<meta property="og:image" content="https://www.rando-roulette.com/images/snapchat.jpg?v=1" />
-
-
-  <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Aylah's Profile" />
-<meta name="twitter:description" content="Anonymous chat room for meeting new people" />
-<meta name="twitter:image" content="https://www.rando-roulette.com/images/snapchat.jpg?v=1" />
-
-</head>
-<body>
-  <div id="app" data-view="public">
-
-    <div id="public-chat-page" class="chat-page">
-      <header class="topbar" role="banner">
-        <div class="topbar-left"></div>
-        <div class="topbar-center">
-          <div class="title">Error</div>
-          <div class="subtitle"></div>
-        </div>
-        <div class="topbar-right">
-          <button class="icon-btn dm-open-btn" aria-label="DMs" title="Direct messages">💬</button>
-        </div>
-      </header>
-      <main class="chat-container" role="main">
-        <ul id="public-chat-list" role="log" aria-live="polite"></ul>
-      </main>
-      <form id="public-composer" class="composer-form" autocomplete="off" aria-label="Message composer">
-        <button type="button" class="icon-btn attach" aria-label="Attach" title="Attach">📎</button>
-        <textarea class="msg-input" maxlength="500" placeholder="Type a message"></textarea>
-        <button class="send-btn" type="submit" disabled aria-label="Send message">Send</button>
-      </form>
-    </div>
-
-    <div id="dm-chat-page" class="chat-page">
-      <header class="topbar" role="banner">
-        <div class="topbar-left">
-          <button id="dm-back-btn" class="icon-btn" aria-label="Back to public chat" title="Back">⬅️</button>
-        </div>
-        <div class="topbar-center">
-          <div id="dm-chat-title" class="title">Direct Message</div>
-          <div id="dm-chat-subtitle" class="subtitle"></div>
-        </div>
-        <div class="topbar-right"></div>
-      </header>
-      <main class="chat-container" role="main">
-        <ul id="dm-chat-list" role="log" aria-live="polite"></ul>
-      </main>
-      <form id="dm-composer" class="composer-form" autocomplete="off" aria-label="DM composer">
-        <button type="button" class="icon-btn attach" aria-label="Attach" title="Attach">📎</button>
-        <textarea class="msg-input" maxlength="500" placeholder="Send a private message"></textarea>
-        <button class="send-btn" type="submit" disabled aria-label="Send message">Send</button>
-      </form>
-    </div>
-    
-    <input type="file" id="fileInput" accept="image/*" style="display:none" />
-
-    <div id="dm-panel" class="dm-panel" aria-hidden="true">
-      <div class="dm-panel-header">
-        <strong>Direct Messages</strong>
-        <button id="dm-close" class="icon-btn" aria-label="Close DMs">✕</button>
-      </div>
-      <div class="dm-panel-section">
-        <h4>My Threads</h4>
-        <div id="dm-threads" class="dm-threads"></div>
-      </div>
-    </div>
-  </div>
-
-  <script src="client.js"></script>
-</body>
-</html> -->

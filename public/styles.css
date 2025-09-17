@@ -9,32 +9,43 @@
   --muted: #6B7280;
   --radius: 18px;
   --shadow: 0 4px 14px rgba(0,0,0,0.08);
+  --ad-height: 90px;        /* default desktop leaderboard */
+  --mobile-ad-height: 50px;/* mobile default */
+  --topbar-height: 64px;    /* approx header height (we measure precisely with JS below) */
+  --composer-height: 70px;  /* default composer height; JS will measure and update */
+
 }
 
 /* --- Basic Setup & Mobile Viewport Fix --- */
 * { box-sizing: border-box; }
 html, body {
-  height: 100%; margin: 0;
+  height: 100%;
+  margin: 0;
   -webkit-font-smoothing: antialiased;
   background: var(--bg);
   overscroll-behavior: none;
-  overflow: hidden;
+  /* allow normal scrolling and layout reflow */
   font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
   color: var(--text);
 }
+
 
 /* --- App Layout & View Switching --- */
 #app {
   display: flex;
   flex-direction: column;
-  height: calc(var(--vh, 1vh) * 100);
+  /* let the document flow naturally — use min-height to respect the viewport */
   min-height: 100svh;
+  height: auto;
   background: var(--bg);
 }
+
 .chat-page {
   display: none; /* Hide pages by default */
   flex-direction: column;
-  height: 100%;
+  /* height: 100%; */
+  flex: 1; 
+  min-height: 0;
 }
 /* Show the active page based on the data-view attribute */
 #app[data-view="public"] #public-chat-page,
@@ -46,8 +57,8 @@ html, body {
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px; background: var(--my-bubble); color: #fff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  position: sticky; top: 0; z-index: 30;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06); top: 0; z-index: 30;  position: fixed; width: 100%;
+
 }
 .topbar .title { font-size: 44px; font-weight: 800; font-family: 'DynaPuff', cursive; }
 .topbar .subtitle { font-size: 22px; opacity: 0.95; margin-top: 2px; }
@@ -71,8 +82,7 @@ html, body {
   flex-direction: column;
 
   /* New padding so messages aren’t hidden */
-  padding-bottom: 70px; /* height of composer */
-  padding-top: 150px;   /* 60px topbar + 90px leaderboard ad */
+  padding-bottom: 120px; /* height of composer */
 }
 
 #public-chat-list, #dm-chat-list {
@@ -106,10 +116,16 @@ html, body {
 
 /* ✨ --- IMAGE BLUR STYLES (RESTORED) --- ✨ */
 .message img.chat-image {
-  max-width: 100%; max-height: 40vh; width: auto; height: auto;
+  max-width: min(94vw, 720px); max-height: 40vh; width: auto; height: auto;
   border-radius: var(--radius); cursor: pointer; display: block;
-  margin-top: 8px; object-fit: contain;
+  margin-top: 8px; object-fit: contain; margin: 8px 0;
 }
+
+.message .content {
+  overflow: hidden;
+  max-width: 100%;
+}
+
 .message img.blurred {
   filter: blur(12px);
   transition: filter 0.2s ease;
@@ -119,12 +135,29 @@ html, body {
 }
 
 /* --- Composer --- */
-.composer-form {
-  position: sticky; bottom: 0; z-index: 40; display: flex; gap: 8px;
+/* .composer-form {
+  position: fixed; bottom: 0; z-index: 40; display: flex; gap: 8px;
   padding: 10px; border-top: 1px solid rgba(2,6,23,0.04);
   background: var(--card); align-items: flex-end;
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+} */
+.composer-form {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 8px)); /* respect notch / safe area */
+  z-index: 60;
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid rgba(2,6,23,0.04);
+  background: var(--card);
+  align-items: flex-end;
+  width: 100%;     /* small gutters on mobile */
+
+  box-shadow: 0 -10px 30px rgba(0,0,0,0.06);
 }
+
 .msg-input {
   flex: 1; min-height: 44px; max-height: 140px; padding: 10px 12px;
   border-radius: 12px; border: 1px solid #e6edf3; font-size: 16px;
@@ -165,11 +198,7 @@ html, body {
   .topbar .subtitle { font-size: 14px; }
   .message { font-size: 16px; }
 }
-@media (max-width: 768px) {
-  .chat-container {
-    padding-top: 110px; /* 60px topbar + 50px mobile ad */
-  }
-}
+
 
 
 /* Admin button in topbar */
@@ -200,60 +229,208 @@ html, body {
 }
 
 
-/* ===== Desktop leaderboard ad ===== */
-.leaderboard-ad-container {
-  position: sticky;
-  top: 0;
-  z-index: 1000;
+/* === FEED: nicer image presentation (replace prior .feed-media rules) === */
+.feed-page { display: none; flex-direction: column; height: 100%; }
+#app[data-view="feed"] #feed-page { display: flex; }
+
+#feed-list { list-style: none; margin: 0; 
+  display: flex; flex-direction: column; gap: 12px; align-items: center;   box-sizing: border-box; margin-top: 100px; padding: 0px;
+}
+
+/* feed item card */
+.feed-item {
   width: 100%;
-  text-align: center;
-  background: #fff;
-  padding: 5px 0;
-  border-bottom: 1px solid #ddd;
+  max-width: 920px;        /* container limit on large screens */
+  background: var(--card);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px;
+  margin-top: 10px;
 }
 
-/* Force the leaderboard ad to size correctly */
-.leaderboard-ad-container ins {
-  display: inline-block !important;
-  width: 728px !important;
-  height: 90px !important;
-  max-width: 100%;
+/* wrapper ensures media centers nicely and keeps cards consistent */
+.feed-media-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(180deg, #fff, #fbfbfd);
+  border-radius: 10px;
+  padding: 6px;
 }
 
-/* ===== Mobile top ad ===== */
+/* key rule: contain instead of cover so images are not cropped */
+.feed-media {
+  display: block;
+  width: 100%;
+  max-width: min(94vw, 720px); /* never exceed 720px, scale down on small screens */
+  height: auto;                /* preserve aspect ratio */
+  max-height: 60vh;            /* avoid extremely tall images on small screens */
+  object-fit: contain;         /* IMPORTANT: do not crop */
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+  background: #f7f7f8;
+  cursor: zoom-in;
+}
+
+/* small caption / meta */
+.feed-meta { display:flex; justify-content:space-between; align-items:center; margin-top:10px; width:100%; padding: 0 6px; font-size:13px; color:var(--muted); }
+
+/* lightbox styles (optional but recommended) */
+.lightbox {
+  position: fixed; inset: 0; display: none; z-index: 1200;
+  align-items: center; justify-content: center; background: rgba(0,0,0,0.75);
+  padding: 20px;
+}
+.lightbox.open { display: flex; }
+.lightbox img { max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+.lightbox .close-btn {
+  position: absolute; top: 18px; right: 18px; background: rgba(255,255,255,0.9);
+  border-radius: 8px; padding: 6px 10px; border: none; font-weight: 700; cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+}
+
+
+/* feed username button */
+.feed-username {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+.feed-username:hover { text-decoration: underline; color: var(--text); }
+.feed-username:disabled { cursor: default; opacity: 0.6; text-decoration: none; }
+
+
+
+
+
+
+
+
+
+/* --- Shared ad container styling --- */
+.leaderboard-ad-container,
 .mobile-ad {
-  display: none; /* hidden by default, shown in mobile view below */
-  position: sticky;
-  top: 0;
-  z-index: 1000;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;               /* prevents injected iframe from bleeding out */
+  /* fixed the var typo: use --bg */
+  background: var(--bg);
+  /* use a sensible border color (no undefined var) */
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 12px;
+  min-height: 1px;                /* allow height control below */
+  position: relative;
+  background-clip: padding-box;
+}
+
+/* Desktop leaderboard: in-document flow (does not overlay header) */
+.leaderboard-ad-container {
+  height: var(--ad-height);
+  min-height: var(--ad-height);
+  display: flex;
+}
+
+/* Mobile ad: sticky so it can stick but still occupy layout space */
+.mobile-ad {
+  position: sticky;   /* occupies space and can stick as user scrolls */
+  top: 0;             /* sticks at the top of the viewport but still in document flow */
+  left: 0;
+  right: 0;
+  height: var(--mobile-ad-height);
+  min-height: var(--mobile-ad-height);
+  z-index: 50;        /* below the topbar */
   text-align: center;
-  background: #fff;
-  padding: 5px 0;
-  border-bottom: 1px solid #ddd;
+  padding: 4px 0;
+  border-bottom: 1px solid #e6e6e6;
+  display: none;      /* shown only via mobile media query */
+  box-shadow: 0 6px 14px rgba(0,0,0,0.04);
+  overflow: hidden;   /* keep injected iframe/ins clipped to container */
+
+  /* tasteful light fallback so it's never an empty white rectangle on mobile */
+  background-image: linear-gradient(180deg,#ffffff,#fbfbfd);
 }
 
-.mobile-ad ins {
-  display: inline-block !important;
-  width: 300px !important;
-  height: 50px !important;
+/* make any injected <ins> / iframe fit the container */
+.leaderboard-ad-container ins,
+.mobile-ad ins,
+.leaderboard-ad-container iframe,
+.mobile-ad iframe {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
   max-width: 100%;
+  max-height: 100%;
+  border: 0;
+  margin: 0;
+  box-sizing: border-box;
 }
 
-/* ===== Responsive behavior ===== */
+
+
+/* Make sure content below doesn't sit under topbar */
+.chat-container {
+  padding-top: calc(var(--ad-height) + var(--topbar-height) + 8px);
+}
+
+/* Mobile breakpoint: change variables and visibility */
 @media (max-width: 768px) {
-  .leaderboard-ad-container {
-    display: none;
+  /* Let the ad and topbar occupy space (sticky): don't force huge padding */
+  .chat-container {
+    padding-top: 8px;   /* small breathing room — ad + topbar already take space */
   }
-  .mobile-ad {
-    display: block;
-  }
+
+  /* show mobile ad, hide desktop leaderboard */
+  .leaderboard-ad-container { display: none; }
+  .mobile-ad { display: block; }
+
+  /* set the CSS var so topbar uses correct offset when no JS changes it */
+  :root { --ad-height: 50px; }
 }
 
+
+/* Desktop breakpoint */
 @media (min-width: 769px) {
-  .leaderboard-ad-container {
-    display: block;
-  }
-  .mobile-ad {
-    display: none;
-  }
+  :root { --ad-height: 90px; }
+  .leaderboard-ad-container { display: flex; }
+  .mobile-ad { display: none; }
+  .topbar { top: calc(var(--ad-height)); }
 }
+
+/* Visual polish so it never looks like an accidental white rectangle */
+.leaderboard-ad-container,
+.mobile-ad {
+  transition: box-shadow .18s ease, transform .12s ease;
+  background-color: #fff;
+  background-image: linear-gradient(180deg,#ffffff,#fbfbfd);
+}
+.leaderboard-ad-container::after,
+.mobile-ad::after {
+  content: "Sponsored";
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  font-size: 11px;
+  color: rgba(0,0,0,0.45);
+  background: rgba(255,255,255,0.75);
+  padding: 2px 6px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+
